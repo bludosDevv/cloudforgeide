@@ -1,0 +1,5 @@
+{
+  "name": "CloudForge IDE",
+  "description": "A professional, cloud-based Minecraft modding studio for Forge and Fabric. Features GitHub integration, automated builds, and Gemini AI assistance.",
+  "requestFramePermissions": []
+}
