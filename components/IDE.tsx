@@ -189,7 +189,15 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const [creationContextPath, setCreationContextPath] = useState<string>(""); // Used when creating files via context menu
   const [importTargetFolder, setImportTargetFolder] = useState<string>("");
 
-  const gemini = useRef(new GeminiService());
+  // Lazy init Gemini to prevent render crashes if it throws
+  const gemini = useRef<GeminiService | null>(null);
+  useEffect(() => {
+      try {
+          if (!gemini.current) gemini.current = new GeminiService();
+      } catch (e) {
+          console.error("Failed to lazy init Gemini", e);
+      }
+  }, []);
 
   useEffect(() => {
       const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -389,6 +397,8 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
   const handleAiSend = async () => {
       if (!aiMessage.trim()) return;
+      if (!gemini.current) { alert("AI Service not initialized (Check API Key)"); return; }
+
       const userMsg = aiMessage;
       setAiMessage("");
       setAiHistory(prev => [...prev, { role: "user", parts: [{ text: userMsg }] }]);

@@ -23,13 +23,24 @@ Support Markdown for bold text (**text**) and code blocks (\`\`\`java ... \`\`\`
 `;
 
 export class GeminiService {
-  private ai: GoogleGenAI;
+  private ai: GoogleGenAI | null = null;
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    try {
+      const apiKey = process.env.API_KEY;
+      if (apiKey) {
+        this.ai = new GoogleGenAI({ apiKey });
+      } else {
+        console.warn("Gemini API Key is missing. AI features will be disabled.");
+      }
+    } catch (e) {
+      console.error("Failed to initialize Gemini Client", e);
+    }
   }
 
   async chat(message: string, context?: string, history: any[] = []): Promise<string> {
+    if (!this.ai) return "AI is not configured (Missing API Key).";
+    
     try {
       const chat = this.ai.chats.create({
         model: "gemini-3-pro-preview", 
@@ -44,17 +55,23 @@ export class GeminiService {
       });
       
       return response.text || "I couldn't generate a response.";
-    } catch (error) {
+    } catch (error: any) {
       console.error("Gemini Error:", error);
-      return "Error communicating with AI agent.";
+      return `Error communicating with AI agent: ${error.message}`;
     }
   }
 
   async generateCode(prompt: string, fileContent: string): Promise<string> {
-       const response = await this.ai.models.generateContent({
-        model: "gemini-3-pro-preview",
-        contents: `Here is the current file content:\n\`\`\`\n${fileContent}\n\`\`\`\n\nRequest: ${prompt}\n\nProvide the full updated file content directly. Do not use markdown code blocks, just raw text.`,
-      });
-      return response.text || "";
+      if (!this.ai) return "";
+      try {
+        const response = await this.ai.models.generateContent({
+          model: "gemini-3-pro-preview",
+          contents: `Here is the current file content:\n\`\`\`\n${fileContent}\n\`\`\`\n\nRequest: ${prompt}\n\nProvide the full updated file content directly. Do not use markdown code blocks, just raw text.`,
+        });
+        return response.text || "";
+      } catch (e) {
+        console.error("Gemini Generate Error", e);
+        return "";
+      }
   }
 }

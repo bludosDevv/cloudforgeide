@@ -5,6 +5,7 @@ import IDE from './components/IDE';
 import { Repository } from './types';
 import { Github, KeyRound, Loader2, Info, ArrowRight, Box } from 'lucide-react';
 import { Button, Card, Input } from './components/ui';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const App = () => {
   const [token, setToken] = useState<string | null>(localStorage.getItem('gh_token'));
@@ -132,7 +133,11 @@ const App = () => {
   }
 
   if (currentRepo && github) {
-    return <IDE repo={currentRepo} github={github} onBack={() => setCurrentRepo(null)} />;
+    return (
+      <ErrorBoundary>
+        <IDE repo={currentRepo} github={github} onBack={() => setCurrentRepo(null)} />
+      </ErrorBoundary>
+    );
   }
 
   return (
