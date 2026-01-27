@@ -432,7 +432,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   return (
     <div className="flex flex-col h-screen w-screen bg-gray-950 overflow-hidden text-gray-200">
         <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-        {activeBuild && <BuildOverlay status={activeBuild.status} runId={activeBuild.id} github={github} repo={repo} onClose={() => setActiveBuild(null)} />}
+        {activeBuild && <BuildOverlay status={activeBuild.status} url={activeBuild.html_url} runId={activeBuild.id} github={github} repo={repo} onClose={() => setActiveBuild(null)} />}
 
         {/* Header */}
         <div className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-3 gap-3 z-30 shrink-0">

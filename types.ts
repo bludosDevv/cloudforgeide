@@ -11,6 +11,7 @@ export interface Repository {
   description: string | null;
   default_branch: string;
   updated_at: string;
+  html_url: string;
   owner: {
     login: string;
   };
