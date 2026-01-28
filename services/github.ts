@@ -1,5 +1,5 @@
 import { GITHUB_API_BASE } from '../constants';
-import { FileNode, FileContent, Repository, User, WorkflowRun } from '../types';
+import { FileNode, FileContent, Repository, User, WorkflowRun, Artifact } from '../types';
 
 export class GitHubService {
   private token: string;
@@ -9,7 +9,7 @@ export class GitHubService {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${GITHUB_API_BASE}${endpoint}`;
+    const url = endpoint.startsWith('http') ? endpoint : `${GITHUB_API_BASE}${endpoint}`;
     const headers = {
       'Authorization': `token ${this.token}`,
       'Accept': 'application/vnd.github.v3+json',
@@ -153,5 +153,30 @@ export class GitHubService {
       } catch (e) {
           return [];
       }
+  }
+
+  async getArtifacts(owner: string, repo: string, runId: number): Promise<Artifact[]> {
+    try {
+        const res = await this.request<any>(`/repos/${owner}/${repo}/actions/runs/${runId}/artifacts`);
+        return res.artifacts;
+    } catch (e) {
+        return [];
+    }
+  }
+
+  async downloadArtifact(url: string, filename: string) {
+      // Fetch as blob with auth headers
+      const response = await fetch(url, {
+          headers: { 'Authorization': `token ${this.token}` }
+      });
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename; // This might be ignored by browser for zip, but good practice
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
   }
 }

@@ -62,3 +62,13 @@ export interface WorkflowRun {
   html_url: string;
   created_at: string;
 }
+
+export interface Artifact {
+  id: number;
+  name: string;
+  size_in_bytes: number;
+  url: string;
+  archive_download_url: string;
+  expired: boolean;
+  created_at: string;
+}

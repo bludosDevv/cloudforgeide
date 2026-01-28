@@ -8,9 +8,9 @@ import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-java';
 import 'prismjs/components/prism-json';
 
-import { FileNode, Repository, WorkflowRun } from '../types';
+import { FileNode, Repository, WorkflowRun, Artifact } from '../types';
 import { GitHubService } from '../services/github';
-import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload } from 'lucide-react';
+import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
 import { Button, Modal, Input } from './ui';
 
@@ -26,29 +26,29 @@ const FileTreeItem = ({ node, level, onSelect, expandedFolders, toggleFolder, se
   const isFolder = node.type === 'tree';
   const isExpanded = expandedFolders.has(node.path);
   const isSelected = selectedPath === node.path;
-  const paddingLeft = `${level * 16 + 12}px`; // Increased indentation
+  const paddingLeft = `${level * 16 + 12}px`;
 
   return (
     <div>
       <div 
-        className={`flex items-center justify-between py-3 px-2 cursor-pointer text-sm select-none transition-colors border-l-2 ${isSelected ? 'bg-primary-900/20 border-primary-500 text-primary-300' : 'border-transparent text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`}
+        className={`flex items-center justify-between py-2 px-2 cursor-pointer text-sm select-none transition-colors border-l-2 ${isSelected ? 'bg-primary-900/20 border-primary-500 text-primary-300' : 'border-transparent text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`}
         style={{ paddingLeft }}
         onClick={() => isFolder ? toggleFolder(node.path) : onSelect(node)}
       >
         <div className="flex items-center overflow-hidden">
-            <span className="mr-3 opacity-60 flex-shrink-0">
-                {isFolder ? (isExpanded ? <ChevronDown size={16}/> : <ChevronRight size={16}/>) : <span className="w-4 block"></span>}
+            <span className="mr-2 opacity-60 flex-shrink-0">
+                {isFolder ? (isExpanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>) : <span className="w-3.5 block"></span>}
             </span>
-            <span className="mr-3 opacity-90 flex-shrink-0">
-                {isFolder ? <Folder size={18} fill="currentColor" className={isExpanded ? "text-primary-400" : "text-gray-500"} /> : <FileText size={18} className="text-gray-500" />}
+            <span className="mr-2 opacity-90 flex-shrink-0">
+                {isFolder ? <Folder size={16} fill="currentColor" className={isExpanded ? "text-primary-400" : "text-gray-500"} /> : <FileText size={16} className="text-gray-500" />}
             </span>
-            <span className="truncate font-medium text-base">{node.path.split('/').pop()}</span>
+            <span className="truncate font-medium">{node.path.split('/').pop()}</span>
         </div>
         <button 
-            className="p-1.5 hover:bg-gray-700 rounded-md text-gray-500 hover:text-white"
+            className="p-1 hover:bg-gray-700 rounded-md text-gray-500 hover:text-white"
             onClick={(e) => { e.stopPropagation(); onMenu(node); }}
         >
-            <MoreVertical size={16} />
+            <MoreVertical size={14} />
         </button>
       </div>
       {isFolder && isExpanded && node.children && (
@@ -73,10 +73,8 @@ const FileTreeItem = ({ node, level, onSelect, expandedFolders, toggleFolder, se
 
 // Simple Markdown Renderer for AI Messages
 const AiMessageRenderer = ({ text }: { text: string }) => {
-  // Extract JSON block if present (it shouldn't be rendered directly usually, but if it is)
   if (text.trim().startsWith('```json')) return <span className="text-xs text-gray-500 italic">Executing actions...</span>;
 
-  // Split by code blocks
   const parts = text.split(/(```[\s\S]*?```)/g);
 
   return (
@@ -104,7 +102,6 @@ const AiMessageRenderer = ({ text }: { text: string }) => {
             </div>
           );
         }
-        // Bold parsing
         const boldParts = part.split(/(\*\*.*?\*\*)/g);
         return (
             <span key={idx}>
@@ -120,41 +117,123 @@ const AiMessageRenderer = ({ text }: { text: string }) => {
   );
 };
 
-const BuildOverlay = ({ status, url, runId, github, repo, onClose }: any) => {
+const BuildOverlay = ({ status, runId, github, repo, onClose, onMinimize }: any) => {
     const [jobs, setJobs] = useState<any[]>([]);
-    
+    const [logs, setLogs] = useState<string[]>([]);
+    const [artifact, setArtifact] = useState<Artifact | null>(null);
+    const [downloading, setDownloading] = useState(false);
+
     useEffect(() => {
+        let isMounted = true;
         const fetchJobs = async () => {
-             try { const j = await github.getWorkflowJobs(repo.owner.login, repo.name, runId); setJobs(j); } catch (e) {}
+             try { 
+                 const j = await github.getWorkflowJobs(repo.owner.login, repo.name, runId); 
+                 if (isMounted) {
+                    setJobs(j);
+                    // Simulate log streaming based on job steps
+                    if (j.length > 0) {
+                        const newLogs = j[0].steps.map((s: any) => {
+                            const icon = s.status === 'completed' ? (s.conclusion === 'success' ? '✓' : '✗') : '➜';
+                            return `${icon} [${new Date().toLocaleTimeString()}] ${s.name} ... ${s.status}`;
+                        });
+                        setLogs(newLogs);
+                    }
+                 }
+
+                 // Check for artifacts if complete
+                 if (j.length > 0 && j[0].status === 'completed' && j[0].conclusion === 'success') {
+                     const arts = await github.getArtifacts(repo.owner.login, repo.name, runId);
+                     if (arts.length > 0 && isMounted) setArtifact(arts[0]);
+                 }
+             } catch (e) {}
         };
         fetchJobs();
         const interval = setInterval(fetchJobs, 2000);
-        return () => clearInterval(interval);
+        return () => { isMounted = false; clearInterval(interval); };
     }, [runId]);
 
-    const steps = jobs.length > 0 ? jobs[0].steps : [];
-    
-    let displayStatus = "Processing...";
-    let color = "text-primary-400";
-    if(status === 'success') { displayStatus = "Build Success"; color = "text-green-400"; }
-    if(status === 'failure') { displayStatus = "Build Failed"; color = "text-red-400"; }
+    const handleDownload = async () => {
+        if (!artifact) return;
+        setDownloading(true);
+        try {
+            await github.downloadArtifact(artifact.archive_download_url, `${artifact.name}.zip`);
+        } catch (e) {
+            alert("Download failed: " + e);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    const isSuccess = status === 'completed' && jobs[0]?.conclusion === 'success';
+    const isFailure = status === 'completed' && jobs[0]?.conclusion === 'failure';
+    const isActive = status !== 'completed';
 
     return (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg bg-gray-950 border border-gray-800 rounded-2xl p-6 flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                     <h3 className={`font-bold text-xl ${color}`}>{displayStatus}</h3>
-                     <button onClick={onClose}><X size={20}/></button>
-                </div>
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                    {steps.map((s:any, i:number) => (
-                        <div key={i} className="flex items-center gap-3 p-3 bg-gray-900 rounded-lg">
-                            <div className={`w-3 h-3 rounded-full ${s.status === 'completed' ? (s.conclusion === 'success' ? 'bg-green-500' : 'bg-red-500') : 'bg-yellow-500 animate-pulse'}`}></div>
-                            <span>{s.name}</span>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+            <div className="w-full max-w-2xl bg-[#0d1117] border border-gray-700 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${isSuccess ? 'bg-green-500/10 text-green-400' : isFailure ? 'bg-red-500/10 text-red-400' : 'bg-primary-500/10 text-primary-400'}`}>
+                            {isActive ? <Loader2 size={18} className="animate-spin" /> : isSuccess ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
                         </div>
-                    ))}
+                        <div>
+                            <h3 className="font-bold text-gray-200 text-sm">Build Pipeline</h3>
+                            <p className="text-xs text-gray-500 font-mono">Run ID: {runId}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                         <button onClick={onMinimize} className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white" title="Minimize"><Minus size={18}/></button>
+                         <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white" title="Close"><X size={18}/></button>
+                    </div>
                 </div>
-                {url && <a href={url} target="_blank" className="text-center text-primary-400 text-sm hover:underline">View Logs</a>}
+
+                {/* Content */}
+                <div className="p-0 bg-black flex flex-col h-[400px]">
+                    {/* Terminal Area */}
+                    <div className="flex-1 p-4 font-mono text-xs overflow-y-auto space-y-1">
+                        {logs.map((log, i) => (
+                            <div key={i} className={`flex gap-2 ${log.includes('✗') ? 'text-red-400' : log.includes('✓') ? 'text-green-400' : 'text-gray-400'}`}>
+                                <span className="opacity-50">{i + 1}</span>
+                                <span>{log}</span>
+                            </div>
+                        ))}
+                        {isActive && <div className="text-primary-500 animate-pulse mt-2">_ Building project...</div>}
+                    </div>
+
+                    {/* Footer / Actions */}
+                    <div className="p-4 bg-gray-900 border-t border-gray-800">
+                         {isActive && (
+                            <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-primary-500 animate-progress-indeterminate"></div>
+                            </div>
+                         )}
+
+                         {isSuccess && (
+                            <div className="flex items-center justify-between animate-in slide-in-from-bottom-2">
+                                <div className="text-green-400 flex items-center gap-2 font-medium text-sm">
+                                    <CheckCircle2 size={16}/> Build Successful
+                                </div>
+                                <div className="flex gap-3">
+                                    <Button variant="secondary" onClick={onClose} size="sm">Close</Button>
+                                    {artifact && (
+                                        <Button variant="primary" onClick={handleDownload} disabled={downloading} className="shadow-green-900/20 bg-green-600 hover:bg-green-500 border-green-500">
+                                            {downloading ? <Loader2 size={16} className="animate-spin"/> : <Download size={16}/>}
+                                            Download Mod (.jar)
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                         )}
+
+                         {isFailure && (
+                             <div className="flex items-center justify-between text-red-400 animate-in slide-in-from-bottom-2">
+                                <span className="flex items-center gap-2 font-medium text-sm"><AlertCircle size={16}/> Build Failed</span>
+                                <Button variant="secondary" onClick={onClose}>Close</Button>
+                             </div>
+                         )}
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -178,7 +257,13 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const [aiMessage, setAiMessage] = useState("");
   const [aiHistory, setAiHistory] = useState<{role: string, parts: {text: string}[]}[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // Build State
   const [activeBuild, setActiveBuild] = useState<WorkflowRun | null>(null);
+  const [isBuildMinimized, setIsBuildMinimized] = useState(false);
+  const [lastBuildId, setLastBuildId] = useState<number>(0);
+  const [isWaitingForBuild, setIsWaitingForBuild] = useState(false);
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // File Manager State
@@ -186,18 +271,20 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const [clipboard, setClipboard] = useState<{path: string, type: 'copy' | 'cut'} | null>(null);
   const [modalMode, setModalMode] = useState<'create_file' | 'create_folder' | 'rename' | null>(null);
   const [modalInput, setModalInput] = useState("");
-  const [creationContextPath, setCreationContextPath] = useState<string>(""); // Used when creating files via context menu
+  const [creationContextPath, setCreationContextPath] = useState<string>(""); 
   const [importTargetFolder, setImportTargetFolder] = useState<string>("");
 
-  // Lazy init Gemini to prevent render crashes if it throws
+  // Lazy init Gemini
   const gemini = useRef<GeminiService | null>(null);
   useEffect(() => {
       try {
           if (!gemini.current) gemini.current = new GeminiService();
-      } catch (e) {
-          console.error("Failed to lazy init Gemini", e);
-      }
+      } catch (e) {}
   }, []);
+
+  const handleAiToggle = () => {
+      setIsAIOpen(!isAIOpen);
+  };
 
   useEffect(() => {
       const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -205,23 +292,52 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Initial Load & Build Polling
+  // Intelligent Build Polling
   useEffect(() => {
     let interval: any;
+    
     const checkBuilds = async () => {
         try {
             const runs = await github.getWorkflowRuns(repo.owner.login, repo.name);
-            const latest = runs[0]; 
-            if (latest && latest.name === 'Build Mod') {
-                 if (activeBuild) { if (latest.id === activeBuild.id) setActiveBuild(latest); } 
-                 else if (latest.status === 'in_progress' || latest.status === 'queued') setActiveBuild(latest);
+            const latest = runs[0];
+            
+            if (!latest) return;
+
+            // Case 1: We are explicitly waiting for a new build after a save
+            if (isWaitingForBuild) {
+                // If we found a run that is newer than our "known" last run
+                if (latest.id > lastBuildId) {
+                    setActiveBuild(latest);
+                    setIsBuildMinimized(false);
+                    setIsWaitingForBuild(false); // Stop "waiting" mode, start "tracking" mode
+                    setLastBuildId(latest.id);
+                }
+            } 
+            // Case 2: Tracking an active build
+            else if (activeBuild && activeBuild.id === latest.id) {
+                setActiveBuild(latest); // Update status
+                if (latest.status === 'completed') {
+                    // Do not auto-close, let user see it
+                }
             }
+            // Case 3: Passive check for external builds (optional, but good)
+            else if (!activeBuild && latest.status === 'in_progress' && latest.id > lastBuildId) {
+                setActiveBuild(latest);
+                setLastBuildId(latest.id);
+            }
+            // Store highest seen ID to avoid re-opening old builds
+            if (latest.id > lastBuildId) setLastBuildId(latest.id);
+
         } catch (e) {}
     };
-    if (activeBuild && activeBuild.status !== 'completed') interval = setInterval(checkBuilds, 2000);
-    checkBuilds();
+
+    // Poll frequently if waiting or building, else slower
+    const pollRate = isWaitingForBuild ? 2000 : (activeBuild?.status === 'in_progress' ? 3000 : 10000);
+    interval = setInterval(checkBuilds, pollRate);
+    checkBuilds(); // Initial check
+
     return () => clearInterval(interval);
-  }, [repo, activeBuild?.id]);
+  }, [repo, activeBuild, isWaitingForBuild, lastBuildId]);
 
   const loadTree = async () => {
       try {
@@ -268,17 +384,14 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
     setIsSaving(true);
     try {
       await github.updateFile(repo.owner.login, repo.name, currentFile.path, editorContent, `Update ${currentFile.path}`, currentFile.sha);
-      await loadTree(); // To update SHA in tree
-      alert("Saved!");
+      await loadTree(); 
+      // Trigger Build Wait
+      setIsWaitingForBuild(true);
     } catch (e) { alert("Failed to save: " + e); } finally { setIsSaving(false); }
   };
 
-  const handleUndo = () => {
-      if (editorRef.current) editorRef.current.trigger('keyboard', 'undo', null);
-  };
-  const handleRedo = () => {
-      if (editorRef.current) editorRef.current.trigger('keyboard', 'redo', null);
-  };
+  const handleUndo = () => editorRef.current?.trigger('keyboard', 'undo', null);
+  const handleRedo = () => editorRef.current?.trigger('keyboard', 'redo', null);
 
   // ---- File Manager Actions ----
 
@@ -289,16 +402,10 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
   const executeModalAction = async () => {
       if (!modalInput) return;
-      
-      // Determine base path: 
-      // 1. If creationContextPath is set (from context menu), use it.
-      // 2. Else if a file/folder is selected, use its parent (or itself if folder).
-      // 3. Fallback to root.
       let basePath = creationContextPath;
       if (!basePath && selectedNode) {
          basePath = selectedNode.type === 'tree' ? selectedNode.path : (selectedNode.path.split('/').slice(0, -1).join('/'));
       }
-      
       const cleanPath = (p: string) => p.startsWith('/') ? p.slice(1) : p;
       const targetPath = cleanPath(basePath ? `${basePath}/${modalInput}` : modalInput);
 
@@ -332,9 +439,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       } catch (e: any) { alert("Delete failed: " + e.message); }
   };
 
-  const handleCopy = () => {
-      if (selectedNode && selectedNode.type === 'blob') setClipboard({ path: selectedNode.path, type: 'copy' });
-  };
+  const handleCopy = () => { if (selectedNode && selectedNode.type === 'blob') setClipboard({ path: selectedNode.path, type: 'copy' }); };
 
   const handlePaste = async () => {
       if (!clipboard || !selectedNode) return;
@@ -342,7 +447,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
           const destFolder = selectedNode.type === 'tree' ? selectedNode.path : selectedNode.path.split('/').slice(0, -1).join('/');
           const fileName = clipboard.path.split('/').pop();
           const newPath = destFolder ? `${destFolder}/${fileName}` : fileName;
-          
           const content = await github.getFileContent(repo.owner.login, repo.name, clipboard.path);
           await github.updateFile(repo.owner.login, repo.name, newPath!, content, `Copy ${fileName}`);
           await loadTree();
@@ -358,7 +462,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files || files.length === 0) return;
-
       const confirmMsg = `Import ${files.length} file(s) into '${importTargetFolder || 'root'}'?`;
       if (!window.confirm(confirmMsg)) return;
 
@@ -366,7 +469,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
           for (let i = 0; i < files.length; i++) {
               const file = files[i];
               const reader = new FileReader();
-              
               await new Promise<void>((resolve, reject) => {
                   reader.onload = async () => {
                       try {
@@ -381,23 +483,15 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
               });
           }
           await loadTree();
-          alert("Import successful!");
-      } catch (err: any) {
-          alert("Import failed: " + err.message);
-      } finally {
-          // Reset input
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          setImportTargetFolder("");
-          setSelectedNode(null);
-      }
+      } catch (err: any) { alert("Import failed: " + err.message); } 
+      finally { if (fileInputRef.current) fileInputRef.current.value = ''; setImportTargetFolder(""); setSelectedNode(null); }
   };
-
 
   // ---- AI Logic ----
 
   const handleAiSend = async () => {
       if (!aiMessage.trim()) return;
-      if (!gemini.current) { alert("AI Service not initialized (Check API Key)"); return; }
+      if (!gemini.current) return;
 
       const userMsg = aiMessage;
       setAiMessage("");
@@ -407,7 +501,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       const context = `Current File: ${currentFile?.path || 'None'}\nFile Tree: ${fileTree.map(f => f.path).join(', ')}`;
       const responseText = await gemini.current.chat(userMsg, context, aiHistory);
       
-      // Parse JSON actions
       const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
       let displayText = responseText;
 
@@ -415,7 +508,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
           try {
               const data = JSON.parse(jsonMatch[1]);
               displayText = data.text;
-              
               if (data.actions && Array.isArray(data.actions)) {
                   for (const action of data.actions) {
                       if (action.type === 'create' || action.type === 'update') {
@@ -442,7 +534,32 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   return (
     <div className="flex flex-col h-screen w-screen bg-gray-950 overflow-hidden text-gray-200">
         <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-        {activeBuild && <BuildOverlay status={activeBuild.status} url={activeBuild.html_url} runId={activeBuild.id} github={github} repo={repo} onClose={() => setActiveBuild(null)} />}
+        
+        {/* Build Overlay */}
+        {activeBuild && !isBuildMinimized && (
+            <BuildOverlay 
+                status={activeBuild.status} 
+                runId={activeBuild.id} 
+                github={github} 
+                repo={repo} 
+                onClose={() => setActiveBuild(null)} 
+                onMinimize={() => setIsBuildMinimized(true)}
+            />
+        )}
+        
+        {/* Minimized Build Indicator */}
+        {activeBuild && isBuildMinimized && (
+             <div 
+                className="fixed bottom-4 right-4 z-50 bg-gray-900 border border-gray-700 shadow-xl rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-800 transition-colors animate-in slide-in-from-bottom-5"
+                onClick={() => setIsBuildMinimized(false)}
+             >
+                <Terminal size={16} className={activeBuild.status === 'in_progress' ? 'text-primary-400 animate-pulse' : 'text-green-400'} />
+                <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-200">Build #{activeBuild.id}</span>
+                    <span className="text-[10px] text-gray-500 uppercase">{activeBuild.status}</span>
+                </div>
+             </div>
+        )}
 
         {/* Header */}
         <div className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-3 gap-3 z-30 shrink-0">
@@ -454,6 +571,12 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                   <span className="text-xs font-bold text-gray-500 uppercase">{repo.name}</span>
                   <span className="text-sm font-bold text-gray-200 truncate max-w-[120px]">{currentFile?.path.split('/').pop()}</span>
                 </div>
+                {isWaitingForBuild && (
+                    <div className="ml-2 flex items-center gap-2 px-2 py-1 rounded bg-yellow-500/10 text-yellow-500 text-xs border border-yellow-500/20">
+                        <Loader2 size={12} className="animate-spin" />
+                        Queuing Build...
+                    </div>
+                )}
             </div>
             
             <div className="flex items-center gap-1 bg-gray-800 p-1 rounded-lg">
@@ -463,22 +586,30 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
             <div className="flex items-center gap-2">
                 <a href={repo.html_url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-white" title="Open in GitHub"><Github size={20}/></a>
-                <button className="p-2 text-primary-400 hover:bg-primary-500/10 rounded-lg" onClick={handleSave} disabled={isSaving}>
+                <button 
+                    className={`p-2 rounded-lg flex items-center gap-2 transition-all ${isSaving ? 'text-gray-500 bg-gray-800' : 'text-primary-400 hover:bg-primary-500/10'}`}
+                    onClick={handleSave} 
+                    disabled={isSaving}
+                >
                   {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+                  <span className="hidden md:inline text-xs font-bold">{isSaving ? 'Pushing...' : 'Save & Build'}</span>
                 </button>
-                <button className="p-2 text-fuchsia-400 hover:bg-fuchsia-500/10 rounded-lg" onClick={() => setIsAIOpen(!isAIOpen)}>
+                <button 
+                    className={`p-2 rounded-lg transition-colors ${isAIOpen ? 'bg-fuchsia-600 text-white' : 'text-fuchsia-400 hover:bg-fuchsia-500/10'}`} 
+                    onClick={handleAiToggle}
+                >
                   <Bot size={20} />
                 </button>
             </div>
         </div>
 
-        {/* Workspace */}
-        <div className="flex-1 flex overflow-hidden relative">
+        {/* Workspace Container - Crucial for layout fix */}
+        <div className="flex-1 flex overflow-hidden relative w-full">
             
             {/* Sidebar (File Manager) */}
-            <div className={`fixed md:static inset-y-0 left-0 bg-gray-900 border-r border-gray-800 z-40 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:w-0'} w-[85vw] max-w-xs md:w-72 top-14 md:top-0 h-[calc(100%-3.5rem)] md:h-auto flex flex-col shadow-2xl md:shadow-none`}>
+            <div className={`fixed md:static inset-y-0 left-0 bg-gray-900 border-r border-gray-800 z-40 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:w-0'} w-[85vw] max-w-xs md:w-72 top-14 md:top-0 h-[calc(100%-3.5rem)] md:h-full flex flex-col shadow-2xl md:shadow-none`}>
                 {/* File Toolbar */}
-                <div className="p-2 border-b border-gray-800 flex gap-1 justify-around bg-gray-900">
+                <div className="p-2 border-b border-gray-800 flex gap-1 justify-around bg-gray-900 shrink-0">
                     <button onClick={() => setupCreate('create_file')} className="p-2 hover:bg-gray-800 rounded text-gray-400" title="New File"><FilePlus size={18}/></button>
                     <button onClick={() => setupCreate('create_folder')} className="p-2 hover:bg-gray-800 rounded text-gray-400" title="New Folder"><FolderPlus size={18}/></button>
                     <button onClick={() => triggerImport("")} className="p-2 hover:bg-gray-800 rounded text-gray-400" title="Import Files"><Upload size={18}/></button>
@@ -505,7 +636,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                 </div>
             </div>
 
-            {/* Context Menu Modal (Mobile friendly) */}
+            {/* Context Menu Modal */}
             {selectedNode && !modalMode && (
                  <div className="absolute left-0 top-0 z-50 p-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 m-2 flex flex-col gap-2 min-w-[220px] animate-in zoom-in-95">
                      <div className="flex justify-between items-center px-2 pb-2 border-b border-gray-700">
@@ -544,9 +675,9 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)}></div>}
 
             {/* Editor */}
-            <div className="flex-1 relative overflow-hidden bg-gray-950 flex flex-col">
+            <div className="flex-1 relative overflow-hidden bg-gray-950 flex flex-col h-full">
                 {currentFile ? (
-                    <div className="flex-1 relative">
+                    <div className="flex-1 relative h-full">
                         {isMobile ? (
                              <div className="flex-1 overflow-auto h-full font-mono text-sm bg-[#1f2937]">
                                 <SimpleEditor
@@ -573,7 +704,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-gray-700">
                         <Code2 size={64} className="mb-4 opacity-20" />
-                        <p>Select a file</p>
+                        <p>Select a file to edit</p>
                     </div>
                 )}
             </div>
@@ -595,7 +726,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                         ))}
                         {aiLoading && <Loader2 className="w-5 h-5 animate-spin text-fuchsia-500" />}
                     </div>
-                    <div className="p-3 bg-gray-800 border-t border-gray-700 flex gap-2">
+                    <div className="p-3 bg-gray-800 border-t border-gray-700 flex gap-2 shrink-0">
                         <input className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-fuchsia-500" 
                                placeholder="Ask AI to edit files..." 
                                value={aiMessage} onChange={(e) => setAiMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAiSend()} />

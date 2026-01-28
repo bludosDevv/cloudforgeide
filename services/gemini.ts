@@ -23,24 +23,14 @@ Support Markdown for bold text (**text**) and code blocks (\`\`\`java ... \`\`\`
 `;
 
 export class GeminiService {
-  private ai: GoogleGenAI | null = null;
+  private ai: GoogleGenAI;
 
   constructor() {
-    try {
-      const apiKey = process.env.API_KEY;
-      if (apiKey) {
-        this.ai = new GoogleGenAI({ apiKey });
-      } else {
-        console.warn("Gemini API Key is missing. AI features will be disabled.");
-      }
-    } catch (e) {
-      console.error("Failed to initialize Gemini Client", e);
-    }
+    // API key must be obtained exclusively from the environment variable process.env.API_KEY.
+    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
   async chat(message: string, context?: string, history: any[] = []): Promise<string> {
-    if (!this.ai) return "AI is not configured (Missing API Key).";
-    
     try {
       const chat = this.ai.chats.create({
         model: "gemini-3-pro-preview", 
@@ -62,7 +52,6 @@ export class GeminiService {
   }
 
   async generateCode(prompt: string, fileContent: string): Promise<string> {
-      if (!this.ai) return "";
       try {
         const response = await this.ai.models.generateContent({
           model: "gemini-3-pro-preview",
