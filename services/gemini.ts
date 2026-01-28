@@ -23,17 +23,48 @@ Support Markdown for bold text (**text**) and code blocks (\`\`\`java ... \`\`\`
 `;
 
 export class GeminiService {
-  private ai: GoogleGenAI;
+  private ai: GoogleGenAI | null = null;
+  private model: string = 'gemini-3-pro-preview';
 
-  constructor() {
-    // API key must be obtained exclusively from the environment variable process.env.API_KEY.
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  constructor(apiKey?: string) {
+    // Priority: Argument -> LocalStorage -> Env Var
+    const key = apiKey || localStorage.getItem('gemini_api_key') || process.env.API_KEY;
+    const storedModel = localStorage.getItem('gemini_model');
+    
+    if (storedModel) {
+      this.model = storedModel;
+    }
+
+    if (key) {
+      try {
+        this.ai = new GoogleGenAI({ apiKey: key });
+      } catch (e) {
+        console.error("Failed to initialize Gemini Client", e);
+      }
+    }
+  }
+
+  isConfigured(): boolean {
+    return !!this.ai;
+  }
+
+  updateConfiguration(apiKey: string, model?: string) {
+    if (apiKey) {
+      localStorage.setItem('gemini_api_key', apiKey);
+      this.ai = new GoogleGenAI({ apiKey });
+    }
+    if (model) {
+      localStorage.setItem('gemini_model', model);
+      this.model = model;
+    }
   }
 
   async chat(message: string, context?: string, history: any[] = []): Promise<string> {
+    if (!this.ai) return "AI is not configured. Please set your API Key in settings.";
+    
     try {
       const chat = this.ai.chats.create({
-        model: "gemini-3-pro-preview", 
+        model: this.model, 
         config: {
           systemInstruction: SYSTEM_INSTRUCTION + "\n" + STRUCTURED_OUTPUT_INSTRUCTION + (context ? `\n\nCurrent Project Context:\n${context}` : ""),
         },
@@ -49,18 +80,5 @@ export class GeminiService {
       console.error("Gemini Error:", error);
       return `Error communicating with AI agent: ${error.message}`;
     }
-  }
-
-  async generateCode(prompt: string, fileContent: string): Promise<string> {
-      try {
-        const response = await this.ai.models.generateContent({
-          model: "gemini-3-pro-preview",
-          contents: `Here is the current file content:\n\`\`\`\n${fileContent}\n\`\`\`\n\nRequest: ${prompt}\n\nProvide the full updated file content directly. Do not use markdown code blocks, just raw text.`,
-        });
-        return response.text || "";
-      } catch (e) {
-        console.error("Gemini Generate Error", e);
-        return "";
-      }
   }
 }

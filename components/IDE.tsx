@@ -266,6 +266,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
   // AI Configuration State
   const [isAiReady, setIsAiReady] = useState(false);
+  const [inlineApiKey, setInlineApiKey] = useState("");
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -283,7 +284,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       try {
           if (!gemini.current) {
               gemini.current = new GeminiService();
-              setIsAiReady(true);
+              if (gemini.current.isConfigured()) setIsAiReady(true);
           }
       } catch (e) {
           console.error("Gemini init failed:", e);
@@ -293,6 +294,12 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
   const handleAiToggle = () => {
       setIsAIOpen(!isAIOpen);
+  };
+  
+  const handleSaveInlineKey = () => {
+      if (!gemini.current || !inlineApiKey.trim()) return;
+      gemini.current.updateConfiguration(inlineApiKey.trim());
+      setIsAiReady(true);
   };
 
   useEffect(() => {
@@ -730,15 +737,19 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400 space-y-4">
                             <Bot size={48} className="opacity-20" />
                             <p className="font-medium">AI Architect is not configured.</p>
-                            <div className="text-xs bg-gray-800 p-4 rounded-lg border border-gray-700 font-mono text-left w-full space-y-2">
-                                <p className="font-bold text-gray-300">How to fix:</p>
-                                <ol className="list-decimal pl-4 space-y-1 text-gray-500">
-                                    <li>Get a Gemini API Key from Google AI Studio.</li>
-                                    <li>Go to your Vercel Project Settings.</li>
-                                    <li>Add Environment Variable: <span className="text-primary-400">API_KEY</span></li>
-                                    <li>Redeploy your application.</li>
-                                </ol>
+                            
+                            <div className="w-full bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-3">
+                                <p className="text-xs text-gray-400 text-left">Enter your Gemini API Key to enable AI features.</p>
+                                <Input 
+                                    placeholder="Paste API Key here..." 
+                                    value={inlineApiKey}
+                                    onChange={(e:any) => setInlineApiKey(e.target.value)}
+                                    type="password"
+                                />
+                                <Button onClick={handleSaveInlineKey} className="w-full" disabled={!inlineApiKey}>Enable AI</Button>
                             </div>
+
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-xs text-primary-400 hover:underline">Get a free API Key</a>
                         </div>
                     ) : (
                         <>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Github, Code2, Box, Search, ArrowRight } from 'lucide-react';
+import { Plus, Github, Code2, Box, Search, ArrowRight, User, KeyRound, LogOut, Settings, Trash2 } from 'lucide-react';
 import { Repository, NewProjectConfig, ModLoader } from '../types';
 import { Button, Input, Select, Modal } from './ui';
 import { GitHubService } from '../services/github';
@@ -25,11 +25,18 @@ interface ProjectListProps {
 const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, onSelect, onRefresh, github, onLogout }) => {
   const [repos, setRepos] = useState<Repository[]>(initialRepos);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // Project Config State
   const [loading, setLoading] = useState(false);
   const [mcVersions, setMcVersions] = useState<string[]>([]);
   const [isFetchingVersions, setIsFetchingVersions] = useState(false);
   const [errors, setErrors] = useState<any>({});
   
+  // AI Settings State
+  const [apiKey, setApiKey] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gemini-3-pro-preview');
+
   const [newProject, setNewProject] = useState<NewProjectConfig & { customVersion: boolean }>({
     name: '',
     description: 'My awesome Minecraft Mod',
@@ -50,6 +57,17 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
     }, 2000);
     return () => clearInterval(interval);
   }, [onRefresh]);
+
+  // Load Settings on Mount
+  useEffect(() => {
+    const storedKey = localStorage.getItem('gemini_api_key');
+    const storedModel = localStorage.getItem('gemini_model');
+    
+    if (storedKey) setApiKey(storedKey);
+    else setIsSettingsOpen(true); // Ask for key if missing
+
+    if (storedModel) setSelectedModel(storedModel);
+  }, []);
 
   useEffect(() => {
     const fetchVersions = async () => {
@@ -165,6 +183,19 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
     }
   };
 
+  const handleSaveSettings = () => {
+    if (apiKey.trim()) {
+        localStorage.setItem('gemini_api_key', apiKey.trim());
+    }
+    localStorage.setItem('gemini_model', selectedModel);
+    setIsSettingsOpen(false);
+  };
+
+  const handleDeleteKey = () => {
+    localStorage.removeItem('gemini_api_key');
+    setApiKey('');
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-950 font-sans">
       <div className="flex-1 overflow-y-auto w-full scroll-smooth">
@@ -178,12 +209,31 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
                    </div>
                    CloudForge Studio
                 </h1>
-                <p className="text-gray-400 mt-2 font-medium flex items-center gap-2">
-                   Logged in as <span className="text-gray-200 font-bold bg-gray-800 px-2 py-0.5 rounded-md">{user?.login}</span>
-                </p>
+                
+                {/* User Profile Trigger */}
+                <div 
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="mt-4 flex items-center gap-3 bg-gray-900 border border-gray-800 p-2 pr-4 rounded-xl cursor-pointer hover:bg-gray-800 hover:border-gray-700 transition-all group w-fit"
+                >
+                    {user?.avatar_url ? (
+                        <img src={user.avatar_url} alt={user.login} className="w-10 h-10 rounded-lg border border-gray-700" />
+                    ) : (
+                        <div className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center text-gray-400">
+                             <User size={20} />
+                        </div>
+                    )}
+                    <div className="flex flex-col">
+                        <span className="text-sm font-bold text-gray-200 group-hover:text-white transition-colors">
+                            {user?.login || 'Guest'}
+                        </span>
+                        <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                            <Settings size={10} /> Manage Settings
+                        </span>
+                    </div>
+                </div>
               </div>
               <div className="flex gap-3 animate-slide-up items-center justify-end" style={{animationDelay: '0.1s'}}>
-                 <Button variant="secondary" onClick={onLogout}>Logout</Button>
+                 <Button variant="secondary" onClick={onLogout}><LogOut size={16} /> Logout</Button>
                  <Button onClick={() => setIsModalOpen(true)} className="px-6 shadow-primary-500/20"><Plus size={18} /> New Project</Button>
               </div>
             </div>
@@ -225,6 +275,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
         </div>
       </div>
 
+      {/* New Project Modal */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="New Mod Project">
         <div className="space-y-5">
             <Input 
@@ -295,6 +346,55 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
                 <Button className="w-full font-bold py-3 text-lg" onClick={handleCreate} loading={loading}>
                      {loading ? 'Initializing...' : 'Create Project'}
                 </Button>
+            </div>
+        </div>
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} title="User Settings">
+        <div className="space-y-6">
+            {/* Profile Section */}
+            <div className="flex items-center gap-4 p-4 bg-gray-800 rounded-xl border border-gray-700">
+                <img src={user?.avatar_url} alt="Avatar" className="w-16 h-16 rounded-full border-2 border-primary-500" />
+                <div>
+                    <h3 className="text-lg font-bold text-white">{user?.login}</h3>
+                    <p className="text-gray-400 text-sm">GitHub User</p>
+                </div>
+            </div>
+
+            {/* AI Config */}
+            <div className="space-y-4">
+                <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-800 pb-2">AI Configuration</h4>
+                
+                <Input 
+                   label="Gemini API Key"
+                   placeholder="Enter your API Key"
+                   type="password"
+                   value={apiKey}
+                   onChange={(e: any) => setApiKey(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 -mt-2">
+                    Stored securely in your browser. <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-primary-400 hover:underline">Get a key here.</a>
+                </p>
+
+                <Select 
+                    label="Model"
+                    value={selectedModel}
+                    onChange={(e: any) => setSelectedModel(e.target.value)}
+                    options={[
+                        { value: 'gemini-3-pro-preview', label: 'Gemini 3.0 Pro (Complex Logic & Coding)' },
+                        { value: 'gemini-3-flash-preview', label: 'Gemini 3.0 Flash (Fast & Efficient)' },
+                    ]}
+                />
+
+                <div className="flex gap-3 pt-2">
+                    <Button onClick={handleSaveSettings} className="flex-1">Save Configuration</Button>
+                    {apiKey && (
+                        <Button variant="danger" onClick={handleDeleteKey} title="Remove Key">
+                            <Trash2 size={18} />
+                        </Button>
+                    )}
+                </div>
             </div>
         </div>
       </Modal>
