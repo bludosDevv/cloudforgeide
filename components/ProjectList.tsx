@@ -58,13 +58,21 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
     return () => clearInterval(interval);
   }, [onRefresh]);
 
-  // Load Settings on Mount
+  // Load Settings on Mount & Auto-Prompt
   useEffect(() => {
     const storedKey = localStorage.getItem('gemini_api_key');
     const storedModel = localStorage.getItem('gemini_model');
     
-    if (storedKey) setApiKey(storedKey);
-    else setIsSettingsOpen(true); // Ask for key if missing
+    if (storedKey) {
+        setApiKey(storedKey);
+    } else {
+        // If no key is found, and no env key is set (simulated check), prompt user
+        // We assume if they are on homepage, they should configure it.
+        const hasEnvKey = typeof process !== 'undefined' && process.env.API_KEY;
+        if (!hasEnvKey) {
+            setIsSettingsOpen(true);
+        }
+    }
 
     if (storedModel) setSelectedModel(storedModel);
   }, []);
@@ -210,10 +218,11 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
                    CloudForge Studio
                 </h1>
                 
-                {/* User Profile Trigger */}
-                <div 
+                {/* User Profile Trigger - Clickable to open Settings */}
+                <button 
                   onClick={() => setIsSettingsOpen(true)}
-                  className="mt-4 flex items-center gap-3 bg-gray-900 border border-gray-800 p-2 pr-4 rounded-xl cursor-pointer hover:bg-gray-800 hover:border-gray-700 transition-all group w-fit"
+                  className="mt-4 flex items-center gap-3 bg-gray-900 border border-gray-800 p-2 pr-4 rounded-xl cursor-pointer hover:bg-gray-800 hover:border-primary-500/50 transition-all group w-fit text-left outline-none focus:ring-2 focus:ring-primary-500/50"
+                  title="Configure AI Settings"
                 >
                     {user?.avatar_url ? (
                         <img src={user.avatar_url} alt={user.login} className="w-10 h-10 rounded-lg border border-gray-700" />
@@ -226,11 +235,11 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
                         <span className="text-sm font-bold text-gray-200 group-hover:text-white transition-colors">
                             {user?.login || 'Guest'}
                         </span>
-                        <span className="text-[10px] text-gray-500 flex items-center gap-1">
-                            <Settings size={10} /> Manage Settings
+                        <span className="text-[10px] text-gray-500 flex items-center gap-1 group-hover:text-primary-400">
+                            <Settings size={10} /> AI Settings
                         </span>
                     </div>
-                </div>
+                </button>
               </div>
               <div className="flex gap-3 animate-slide-up items-center justify-end" style={{animationDelay: '0.1s'}}>
                  <Button variant="secondary" onClick={onLogout}><LogOut size={16} /> Logout</Button>
@@ -366,15 +375,21 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
             <div className="space-y-4">
                 <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-800 pb-2">AI Configuration</h4>
                 
+                <div className="bg-primary-500/10 p-4 rounded-lg border border-primary-500/20">
+                    <p className="text-sm text-gray-300">
+                        Paste your Gemini API Key below. It will be stored safely in your browser.
+                    </p>
+                </div>
+
                 <Input 
                    label="Gemini API Key"
-                   placeholder="Enter your API Key"
+                   placeholder="AIzaSy..."
                    type="password"
                    value={apiKey}
                    onChange={(e: any) => setApiKey(e.target.value)}
                 />
                 <p className="text-xs text-gray-500 -mt-2">
-                    Stored securely in your browser. <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-primary-400 hover:underline">Get a key here.</a>
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-primary-400 hover:underline">Get a free key here</a>
                 </p>
 
                 <Select 
@@ -390,7 +405,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
                 <div className="flex gap-3 pt-2">
                     <Button onClick={handleSaveSettings} className="flex-1">Save Configuration</Button>
                     {apiKey && (
-                        <Button variant="danger" onClick={handleDeleteKey} title="Remove Key">
+                        <Button variant="danger" onClick={handleDeleteKey} title="Delete Key">
                             <Trash2 size={18} />
                         </Button>
                     )}

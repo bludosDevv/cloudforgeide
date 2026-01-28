@@ -283,7 +283,9 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   useEffect(() => {
       try {
           if (!gemini.current) {
-              gemini.current = new GeminiService();
+              // Ensure we check localStorage explicitly here to catch keys saved in ProjectList
+              const storedKey = localStorage.getItem('gemini_api_key');
+              gemini.current = new GeminiService(storedKey || undefined);
               if (gemini.current.isConfigured()) setIsAiReady(true);
           }
       } catch (e) {

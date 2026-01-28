@@ -27,12 +27,25 @@ export class GeminiService {
   private model: string = 'gemini-3-pro-preview';
 
   constructor(apiKey?: string) {
-    // Priority: Argument -> LocalStorage -> Env Var
-    const key = apiKey || localStorage.getItem('gemini_api_key') || process.env.API_KEY;
-    const storedModel = localStorage.getItem('gemini_model');
-    
-    if (storedModel) {
-      this.model = storedModel;
+    this.initialize(apiKey);
+  }
+
+  initialize(explicitKey?: string) {
+    // 1. Explicit Argument
+    // 2. Local Storage (User preference)
+    // 3. Environment Variable (Vercel secret)
+    let key = explicitKey;
+    if (!key && typeof window !== 'undefined') {
+        key = localStorage.getItem('gemini_api_key') || undefined;
+    }
+    if (!key && typeof process !== 'undefined' && process.env.API_KEY) {
+        key = process.env.API_KEY;
+    }
+
+    // Load Model Preference
+    if (typeof window !== 'undefined') {
+        const storedModel = localStorage.getItem('gemini_model');
+        if (storedModel) this.model = storedModel;
     }
 
     if (key) {
@@ -40,7 +53,10 @@ export class GeminiService {
         this.ai = new GoogleGenAI({ apiKey: key });
       } catch (e) {
         console.error("Failed to initialize Gemini Client", e);
+        this.ai = null;
       }
+    } else {
+        this.ai = null;
     }
   }
 
@@ -50,11 +66,11 @@ export class GeminiService {
 
   updateConfiguration(apiKey: string, model?: string) {
     if (apiKey) {
-      localStorage.setItem('gemini_api_key', apiKey);
-      this.ai = new GoogleGenAI({ apiKey });
+      if (typeof window !== 'undefined') localStorage.setItem('gemini_api_key', apiKey);
+      this.initialize(apiKey);
     }
     if (model) {
-      localStorage.setItem('gemini_model', model);
+      if (typeof window !== 'undefined') localStorage.setItem('gemini_model', model);
       this.model = model;
     }
   }
