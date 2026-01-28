@@ -10,7 +10,7 @@ import 'prismjs/components/prism-json';
 
 import { FileNode, Repository, WorkflowRun, Artifact } from '../types';
 import { GitHubService } from '../services/github';
-import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound } from 'lucide-react';
+import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound, Settings } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
 import { Button, Modal, Input } from './ui';
 
@@ -264,6 +264,9 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const [lastBuildId, setLastBuildId] = useState<number>(0);
   const [isWaitingForBuild, setIsWaitingForBuild] = useState(false);
 
+  // AI Configuration State
+  const [isAiReady, setIsAiReady] = useState(false);
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // File Manager State
@@ -278,8 +281,14 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const gemini = useRef<GeminiService | null>(null);
   useEffect(() => {
       try {
-          if (!gemini.current) gemini.current = new GeminiService();
-      } catch (e) {}
+          if (!gemini.current) {
+              gemini.current = new GeminiService();
+              setIsAiReady(true);
+          }
+      } catch (e) {
+          console.error("Gemini init failed:", e);
+          setIsAiReady(false);
+      }
   }, []);
 
   const handleAiToggle = () => {
@@ -491,7 +500,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
   const handleAiSend = async () => {
       if (!aiMessage.trim()) return;
-      if (!gemini.current) return;
+      if (!gemini.current || !isAiReady) return;
 
       const userMsg = aiMessage;
       setAiMessage("");
@@ -716,22 +725,41 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                         <span className="font-bold text-fuchsia-400 flex gap-2 items-center"><Bot size={18}/> AI Architect</span>
                         <button onClick={() => setIsAIOpen(false)}><X size={18}/></button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900">
-                        {aiHistory.map((msg, idx) => (
-                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[95%] rounded-xl px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-200 border border-gray-700'}`}>
-                                    <AiMessageRenderer text={msg.parts[0].text} />
-                                </div>
+
+                    {!isAiReady ? (
+                        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400 space-y-4">
+                            <Bot size={48} className="opacity-20" />
+                            <p className="font-medium">AI Architect is not configured.</p>
+                            <div className="text-xs bg-gray-800 p-4 rounded-lg border border-gray-700 font-mono text-left w-full space-y-2">
+                                <p className="font-bold text-gray-300">How to fix:</p>
+                                <ol className="list-decimal pl-4 space-y-1 text-gray-500">
+                                    <li>Get a Gemini API Key from Google AI Studio.</li>
+                                    <li>Go to your Vercel Project Settings.</li>
+                                    <li>Add Environment Variable: <span className="text-primary-400">API_KEY</span></li>
+                                    <li>Redeploy your application.</li>
+                                </ol>
                             </div>
-                        ))}
-                        {aiLoading && <Loader2 className="w-5 h-5 animate-spin text-fuchsia-500" />}
-                    </div>
-                    <div className="p-3 bg-gray-800 border-t border-gray-700 flex gap-2 shrink-0">
-                        <input className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-fuchsia-500" 
-                               placeholder="Ask AI to edit files..." 
-                               value={aiMessage} onChange={(e) => setAiMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAiSend()} />
-                        <button onClick={handleAiSend} className="p-2 bg-fuchsia-600 text-white rounded-lg"><ArrowLeft size={18} className="rotate-90" /></button>
-                    </div>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900">
+                                {aiHistory.map((msg, idx) => (
+                                    <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[95%] rounded-xl px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-200 border border-gray-700'}`}>
+                                            <AiMessageRenderer text={msg.parts[0].text} />
+                                        </div>
+                                    </div>
+                                ))}
+                                {aiLoading && <Loader2 className="w-5 h-5 animate-spin text-fuchsia-500" />}
+                            </div>
+                            <div className="p-3 bg-gray-800 border-t border-gray-700 flex gap-2 shrink-0">
+                                <input className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-fuchsia-500" 
+                                    placeholder="Ask AI to edit files..." 
+                                    value={aiMessage} onChange={(e) => setAiMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAiSend()} />
+                                <button onClick={handleAiSend} className="p-2 bg-fuchsia-600 text-white rounded-lg"><ArrowLeft size={18} className="rotate-90" /></button>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
         </div>
