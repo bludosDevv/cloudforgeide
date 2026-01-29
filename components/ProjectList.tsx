@@ -205,7 +205,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-950 font-sans">
+    <div className="flex flex-col h-[100dvh] w-screen overflow-hidden bg-gray-950 font-sans fixed inset-0">
       <div className="flex-1 overflow-y-auto w-full scroll-smooth">
         <div className="flex flex-col items-center py-10 px-4 sm:px-6 min-h-full">
           <div className="w-full max-w-6xl space-y-10">

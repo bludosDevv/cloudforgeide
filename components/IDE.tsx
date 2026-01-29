@@ -573,7 +573,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-gray-950 overflow-hidden text-gray-200">
+    <div className="flex flex-col h-[100dvh] w-screen bg-gray-950 overflow-hidden text-gray-200 fixed inset-0">
         <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
         
         {/* Build Overlay */}
@@ -752,7 +752,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
             {/* AI Panel */}
             {isAIOpen && (
-                <div className="absolute inset-y-0 right-0 w-full md:w-[400px] bg-gray-900 border-l border-gray-800 shadow-2xl flex flex-col z-50 animate-in slide-in-from-right duration-200">
+                <div className="absolute inset-y-0 right-0 w-full md:w-[400px] bg-gray-900 border-l border-gray-800 shadow-2xl flex flex-col z-[60] animate-in slide-in-from-right duration-200">
                     <div className="p-3 border-b border-gray-800 flex justify-between items-center bg-gray-800/50">
                         <span className="font-bold text-fuchsia-400 flex gap-2 items-center"><Bot size={18}/> AI Architect</span>
                         <div className="flex items-center gap-1">
@@ -810,7 +810,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                                 ))}
                                 {aiLoading && <Loader2 className="w-5 h-5 animate-spin text-fuchsia-500" />}
                             </div>
-                            <div className="p-3 bg-gray-800 border-t border-gray-700 flex gap-2 shrink-0">
+                            <div className="p-3 bg-gray-800 border-t border-gray-700 flex gap-2 shrink-0 pb-6 md:pb-3">
                                 <input className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-fuchsia-500" 
                                     placeholder="Ask AI to edit files..." 
                                     value={aiMessage} onChange={(e) => setAiMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAiSend()} />
