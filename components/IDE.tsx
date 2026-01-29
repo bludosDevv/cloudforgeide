@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 // @ts-ignore
 import SimpleEditor from 'react-simple-code-editor';
@@ -10,7 +10,7 @@ import 'prismjs/components/prism-json';
 
 import { FileNode, Repository, WorkflowRun, Artifact } from '../types';
 import { GitHubService } from '../services/github';
-import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound, Settings } from 'lucide-react';
+import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound, Settings, CloudUpload } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
 import { Button, Modal, Input, Select } from './ui';
 
@@ -28,6 +28,11 @@ const FileTreeItem = ({ node, level, onSelect, expandedFolders, toggleFolder, se
   const isSelected = selectedPath === node.path;
   const paddingLeft = `${level * 16 + 12}px`;
 
+  // Status Colors
+  let statusColor = "text-gray-500";
+  if (node.status === 'new') statusColor = "text-green-400";
+  else if (node.status === 'modified') statusColor = "text-yellow-400";
+
   return (
     <div>
       <div 
@@ -39,10 +44,13 @@ const FileTreeItem = ({ node, level, onSelect, expandedFolders, toggleFolder, se
             <span className="mr-2 opacity-60 flex-shrink-0">
                 {isFolder ? (isExpanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>) : <span className="w-3.5 block"></span>}
             </span>
-            <span className="mr-2 opacity-90 flex-shrink-0">
-                {isFolder ? <Folder size={16} fill="currentColor" className={isExpanded ? "text-primary-400" : "text-gray-500"} /> : <FileText size={16} className="text-gray-500" />}
+            <span className={`mr-2 flex-shrink-0 ${statusColor}`}>
+                {isFolder ? <Folder size={16} fill="currentColor" className={isExpanded ? "text-primary-400" : ""} /> : <FileText size={16} />}
             </span>
-            <span className="truncate font-medium">{node.path.split('/').pop()}</span>
+            <span className={`truncate font-medium ${node.status ? 'italic' : ''}`}>
+                {node.path.split('/').pop()}
+                {node.status && <span className="ml-2 text-[10px] uppercase opacity-60 font-bold tracking-wider">({node.status === 'modified' ? 'M' : 'N'})</span>}
+            </span>
         </div>
         <button 
             className="p-1 hover:bg-gray-700 rounded-md text-gray-500 hover:text-white"
@@ -73,7 +81,6 @@ const FileTreeItem = ({ node, level, onSelect, expandedFolders, toggleFolder, se
 
 // Simple Markdown Renderer for AI Messages
 const AiMessageRenderer = ({ text }: { text: string }) => {
-  // If the text looks like raw JSON actions, hide it and show a status
   if (text.trim().startsWith('{') && text.includes('"actions"')) {
        try {
            const parsed = JSON.parse(text);
@@ -93,7 +100,7 @@ const AiMessageRenderer = ({ text }: { text: string }) => {
           const lang = match ? match[1] : '';
           const code = match ? match[2] : part.slice(3, -3);
           
-          if (lang === 'json') return null; // Don't render the raw action JSON block
+          if (lang === 'json') return null; 
 
           return (
             <div key={idx} className="bg-gray-950 rounded-lg border border-gray-700 overflow-hidden my-2">
@@ -140,7 +147,6 @@ const BuildOverlay = ({ status, runId, github, repo, onClose, onMinimize }: any)
                  const j = await github.getWorkflowJobs(repo.owner.login, repo.name, runId); 
                  if (isMounted) {
                     setJobs(j);
-                    // Simulate log streaming based on job steps
                     if (j.length > 0) {
                         const newLogs = j[0].steps.map((s: any) => {
                             const icon = s.status === 'completed' ? (s.conclusion === 'success' ? '✓' : '✗') : '➜';
@@ -149,8 +155,6 @@ const BuildOverlay = ({ status, runId, github, repo, onClose, onMinimize }: any)
                         setLogs(newLogs);
                     }
                  }
-
-                 // Check for artifacts if complete
                  if (j.length > 0 && j[0].status === 'completed' && j[0].conclusion === 'success') {
                      const arts = await github.getArtifacts(repo.owner.login, repo.name, runId);
                      if (arts.length > 0 && isMounted) setArtifact(arts[0]);
@@ -181,7 +185,6 @@ const BuildOverlay = ({ status, runId, github, repo, onClose, onMinimize }: any)
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
             <div className="w-full max-w-2xl bg-[#0d1117] border border-gray-700 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
                     <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-lg ${isSuccess ? 'bg-green-500/10 text-green-400' : isFailure ? 'bg-red-500/10 text-red-400' : 'bg-primary-500/10 text-primary-400'}`}>
@@ -197,10 +200,7 @@ const BuildOverlay = ({ status, runId, github, repo, onClose, onMinimize }: any)
                          <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white" title="Close"><X size={18}/></button>
                     </div>
                 </div>
-
-                {/* Content */}
                 <div className="p-0 bg-black flex flex-col h-[400px]">
-                    {/* Terminal Area */}
                     <div className="flex-1 p-4 font-mono text-xs overflow-y-auto space-y-1">
                         {logs.map((log, i) => (
                             <div key={i} className={`flex gap-2 ${log.includes('✗') ? 'text-red-400' : log.includes('✓') ? 'text-green-400' : 'text-gray-400'}`}>
@@ -210,15 +210,12 @@ const BuildOverlay = ({ status, runId, github, repo, onClose, onMinimize }: any)
                         ))}
                         {isActive && <div className="text-primary-500 animate-pulse mt-2">_ Building project...</div>}
                     </div>
-
-                    {/* Footer / Actions */}
                     <div className="p-4 bg-gray-900 border-t border-gray-800">
                          {isActive && (
                             <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
                                 <div className="h-full bg-primary-500 animate-progress-indeterminate"></div>
                             </div>
                          )}
-
                          {isSuccess && (
                             <div className="flex items-center justify-between animate-in slide-in-from-bottom-2">
                                 <div className="text-green-400 flex items-center gap-2 font-medium text-sm">
@@ -235,7 +232,6 @@ const BuildOverlay = ({ status, runId, github, repo, onClose, onMinimize }: any)
                                 </div>
                             </div>
                          )}
-
                          {isFailure && (
                              <div className="flex items-center justify-between text-red-400 animate-in slide-in-from-bottom-2">
                                 <span className="flex items-center gap-2 font-medium text-sm"><AlertCircle size={16}/> Build Failed</span>
@@ -256,11 +252,21 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const editorRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // State
+  // -- State --
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  
+  // LOCAL CACHE: Map path -> content (string)
+  const [fileCache, setFileCache] = useState<Record<string, string>>({});
+  
+  // TRACKING: Sets of paths
+  const [unsavedChanges, setUnsavedChanges] = useState<Set<string>>(new Set());
+  const [newFiles, setNewFiles] = useState<Set<string>>(new Set());
+  
+  // Deleted Paths Ref: Suppress these from showing up in tree until confirmed gone from server
+  const deletedPathsRef = useRef<Set<string>>(new Set());
+
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [currentFile, setCurrentFile] = useState<{path: string, content: string, sha: string} | null>(null);
-  const [editorContent, setEditorContent] = useState("");
+  const [currentFile, setCurrentFile] = useState<{path: string} | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -283,69 +289,35 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // File Manager State
-  const [selectedNode, setSelectedNode] = useState<FileNode | null>(null); // For context menu
-  const [clipboard, setClipboard] = useState<{path: string, type: 'copy' | 'cut'} | null>(null);
+  const [selectedNode, setSelectedNode] = useState<FileNode | null>(null);
   const [modalMode, setModalMode] = useState<'create_file' | 'create_folder' | 'rename' | null>(null);
   const [modalInput, setModalInput] = useState("");
   const [creationContextPath, setCreationContextPath] = useState<string>(""); 
-  const [importTargetFolder, setImportTargetFolder] = useState<string>("");
-
-  // Lazy init Gemini
-  const gemini = useRef<GeminiService | null>(null);
   
-  // Initialize AI on mount or when key changes
+  // Refs for polling access to state
+  const unsavedChangesRef = useRef(unsavedChanges);
+  const newFilesRef = useRef(newFiles);
+  
+  useEffect(() => { unsavedChangesRef.current = unsavedChanges; }, [unsavedChanges]);
+  useEffect(() => { newFilesRef.current = newFiles; }, [newFiles]);
+
+  const gemini = useRef<GeminiService | null>(null);
+
+  // -- Initialization --
+
   useEffect(() => {
       try {
           if (!gemini.current) {
               const storedKey = localStorage.getItem('gemini_api_key');
               gemini.current = new GeminiService(storedKey || undefined);
           }
-          if (gemini.current && gemini.current.isConfigured()) {
-              setIsAiReady(true);
-          } else {
-              setIsAiReady(false);
-          }
-          
+          if (gemini.current && gemini.current.isConfigured()) setIsAiReady(true);
           const storedModel = localStorage.getItem('gemini_model');
           if (storedModel) setInlineModel(storedModel);
-
       } catch (e) {
           console.error("Gemini init failed:", e);
-          setIsAiReady(false);
       }
   }, []);
-
-  // Force re-check when opening panel
-  useEffect(() => {
-      if (isAIOpen && gemini.current) {
-          if (gemini.current.isConfigured()) setIsAiReady(true);
-      }
-  }, [isAIOpen]);
-
-  const handleAiToggle = () => {
-      setIsAIOpen(!isAIOpen);
-  };
-  
-  const handleSaveInlineKey = () => {
-      if (!gemini.current) return;
-      
-      if (inlineApiKey.trim()) {
-        gemini.current.updateConfiguration(inlineApiKey.trim());
-      }
-      gemini.current.updateConfiguration(undefined as any, inlineModel);
-      
-      setIsAiReady(true);
-      setShowAiSettings(false);
-  };
-
-  const handleClearKey = () => {
-      localStorage.removeItem('gemini_api_key');
-      if (gemini.current) {
-          gemini.current = new GeminiService(undefined);
-      }
-      setIsAiReady(false);
-      setInlineApiKey("");
-  };
 
   useEffect(() => {
       const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -353,67 +325,93 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Intelligent Build Polling
-  useEffect(() => {
-    let interval: any;
-    
-    const checkBuilds = async () => {
-        try {
-            const runs = await github.getWorkflowRuns(repo.owner.login, repo.name);
-            const latest = runs[0];
-            
-            if (!latest) return;
+  const handleAiToggle = () => setIsAIOpen(!isAIOpen);
+  
+  const handleSaveInlineKey = () => {
+      if (!gemini.current) return;
+      if (inlineApiKey.trim()) gemini.current.updateConfiguration(inlineApiKey.trim());
+      gemini.current.updateConfiguration(undefined as any, inlineModel);
+      setIsAiReady(true);
+      setShowAiSettings(false);
+  };
 
-            // Case 1: We are explicitly waiting for a new build after a save
-            if (isWaitingForBuild) {
-                // If we found a run that is newer than our "known" last run
-                if (latest.id > lastBuildId) {
-                    setActiveBuild(latest);
-                    setIsBuildMinimized(false);
-                    setIsWaitingForBuild(false); // Stop "waiting" mode, start "tracking" mode
-                    setLastBuildId(latest.id);
-                }
-            } 
-            // Case 2: Tracking an active build
-            else if (activeBuild && activeBuild.id === latest.id) {
-                setActiveBuild(latest); // Update status
-                if (latest.status === 'completed') {
-                    // Do not auto-close, let user see it
-                }
-            }
-            // Case 3: Passive check for external builds (optional, but good)
-            else if (!activeBuild && latest.status === 'in_progress' && latest.id > lastBuildId) {
-                setActiveBuild(latest);
-                setLastBuildId(latest.id);
-            }
-            // Store highest seen ID to avoid re-opening old builds
-            if (latest.id > lastBuildId) setLastBuildId(latest.id);
+  const handleClearKey = () => {
+      localStorage.removeItem('gemini_api_key');
+      if (gemini.current) gemini.current = new GeminiService(undefined);
+      setIsAiReady(false);
+      setInlineApiKey("");
+  };
 
-        } catch (e) {}
-    };
-
-    // Poll frequently if waiting or building, else slower
-    const pollRate = isWaitingForBuild ? 2000 : (activeBuild?.status === 'in_progress' ? 3000 : 10000);
-    interval = setInterval(checkBuilds, pollRate);
-    checkBuilds(); // Initial check
-
-    return () => clearInterval(interval);
-  }, [repo, activeBuild, isWaitingForBuild, lastBuildId]);
-
-  const loadTree = async () => {
+  // -- Build & Tree Polling --
+  
+  // Load tree function that merges server state with local state
+  const refreshTree = useCallback(async (isInitial: boolean = false) => {
       try {
         const { tree } = await github.getRepoTree(repo.owner.login, repo.name);
+        
+        // --- GHOST PREVENTION LOGIC ---
+        // Identify paths that are in our deleted suppression list but NOT in the server tree anymore.
+        // These are confirmed deletions, so we can remove them from suppression list.
+        const serverPathSet = new Set(tree.map((n:any) => n.path));
+        deletedPathsRef.current.forEach(path => {
+            if (!serverPathSet.has(path)) {
+                deletedPathsRef.current.delete(path);
+            }
+        });
+        // ------------------------------
+
+        // Convert flat tree to hierarchical
         const root: any[] = [];
         const map: any = {};
-        tree.forEach((node: any) => { map[node.path] = { ...node, children: [] }; });
-        tree.forEach((node: any) => {
-             const parts = node.path.split('/');
+        
+        // 1. Process Server Nodes
+        tree.forEach((node: any) => { 
+            // Block ghosts: if deleted locally (and pending sync) OR recreated locally, ignore server version
+            if (deletedPathsRef.current.has(node.path)) return;
+            // If we have a local "new" file with same path, ignore server (prevents old version from overwriting new empty file)
+            if (newFilesRef.current.has(node.path)) return;
+
+            // If it's modified locally, keep the 'modified' status
+            const isUnsaved = unsavedChangesRef.current.has(node.path);
+            map[node.path] = { 
+                ...node, 
+                children: [], 
+                status: isUnsaved ? 'modified' : 'synced' 
+            }; 
+        });
+
+        // 2. Add Local New Files (that aren't on server yet)
+        newFilesRef.current.forEach(path => {
+             if (!map[path]) {
+                 map[path] = {
+                     path: path,
+                     mode: '100644', // Default
+                     type: path.includes('.') ? 'blob' : 'tree', // Simple guess
+                     children: [],
+                     status: 'new'
+                 };
+             }
+        });
+
+        // 3. Build Hierarchy
+        const allPaths = Object.keys(map).sort();
+        allPaths.forEach((path: string) => {
+             const node = map[path];
+             const parts = path.split('/');
              if (parts.length > 1) {
                  const parentPath = parts.slice(0, -1).join('/');
-                 if (map[parentPath]) map[parentPath].children.push(map[node.path]);
-                 else root.push(map[node.path]); 
-             } else root.push(map[node.path]);
+                 if (map[parentPath]) {
+                     map[parentPath].children.push(node);
+                 } else {
+                     // Parent missing (maybe local new folder not tracked in ref yet or git glitch), add to root
+                     root.push(node);
+                 }
+             } else {
+                 root.push(node);
+             }
         });
+        
+        // 4. Sorting
         const sortNodes = (nodes: any[]) => {
             nodes.sort((a, b) => {
                 if (a.type === b.type) return a.path.localeCompare(b.path);
@@ -423,38 +421,187 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
         };
         sortNodes(root);
         setFileTree(root);
-      } catch (e) { console.error(e); }
+        
+        // Initial load cleanup
+        if (isInitial) {
+            setFileCache({});
+            setUnsavedChanges(new Set());
+            setNewFiles(new Set());
+            deletedPathsRef.current.clear();
+        }
+
+      } catch (e) { console.error("Poll Error", e); }
+  }, [repo, github]);
+
+  // Initial Load
+  useEffect(() => { refreshTree(true); }, [repo, github]);
+
+  // Periodic Poll (Every 5s)
+  useEffect(() => {
+      const interval = setInterval(() => {
+          refreshTree(false);
+      }, 5000);
+      return () => clearInterval(interval);
+  }, [refreshTree]);
+
+  // Build polling
+  useEffect(() => {
+    let interval: any;
+    const checkBuilds = async () => {
+        try {
+            const runs = await github.getWorkflowRuns(repo.owner.login, repo.name);
+            const latest = runs[0];
+            if (!latest) return;
+            if (isWaitingForBuild) {
+                if (latest.id > lastBuildId) {
+                    setActiveBuild(latest);
+                    setIsBuildMinimized(false);
+                    setIsWaitingForBuild(false);
+                    setLastBuildId(latest.id);
+                }
+            } else if (activeBuild && activeBuild.id === latest.id) {
+                setActiveBuild(latest);
+            } else if (!activeBuild && latest.status === 'in_progress' && latest.id > lastBuildId) {
+                setActiveBuild(latest);
+                setLastBuildId(latest.id);
+            }
+            if (latest.id > lastBuildId) setLastBuildId(latest.id);
+        } catch (e) {}
+    };
+    const pollRate = isWaitingForBuild ? 2000 : (activeBuild?.status === 'in_progress' ? 3000 : 10000);
+    interval = setInterval(checkBuilds, pollRate);
+    checkBuilds(); 
+    return () => clearInterval(interval);
+  }, [repo, activeBuild, isWaitingForBuild, lastBuildId]);
+
+  // -- File System Logic --
+
+  // Helper to safely update tree state recursively
+  const updateTreeState = (nodes: FileNode[], path: string, updater: (node: FileNode) => FileNode | null): FileNode[] => {
+      return nodes.map(node => {
+          if (node.path === path) return updater(node);
+          if (node.children) {
+              const newChildren = updateTreeState(node.children, path, updater).filter(Boolean) as FileNode[];
+              return { ...node, children: newChildren };
+          }
+          return node;
+      }).filter(Boolean) as FileNode[];
   };
 
-  useEffect(() => { loadTree(); }, [repo, github]);
-
-  // ---- Editor Actions ----
+  // Helper to add node to tree
+  const addNodeToTree = (nodes: FileNode[], parentPath: string, newNode: FileNode): FileNode[] => {
+      if (parentPath === "") return [...nodes, newNode].sort((a,b) => a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'tree' ? -1 : 1);
+      
+      return nodes.map(node => {
+          if (node.path === parentPath) {
+              const children = node.children ? [...node.children, newNode] : [newNode];
+              // Sort
+              children.sort((a,b) => a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'tree' ? -1 : 1);
+              return { ...node, children };
+          }
+          if (node.children) {
+              return { ...node, children: addNodeToTree(node.children, parentPath, newNode) };
+          }
+          return node;
+      });
+  };
 
   const handleFileSelect = async (node: FileNode) => {
     try {
+      if (node.type === 'tree') return; // Should be handled by toggleFolder
       setSelectedNode(node);
+      
+      // 1. Check Local Cache first
+      if (fileCache[node.path] !== undefined) {
+          setCurrentFile({ path: node.path });
+          if (isMobile) setIsSidebarOpen(false);
+          return;
+      }
+
+      // 2. Fetch from GitHub if not cached
       const content = await github.getFileContent(repo.owner.login, repo.name, node.path);
-      setCurrentFile({ path: node.path, content, sha: node.sha });
-      setEditorContent(content);
+      
+      // 3. Update Cache (mark as synced initially)
+      setFileCache(prev => ({ ...prev, [node.path]: content }));
+      setCurrentFile({ path: node.path });
+      
       if (isMobile) setIsSidebarOpen(false);
     } catch (e) { alert("Error loading file"); }
   };
 
-  const handleSave = async () => {
-    if (!currentFile) return;
-    setIsSaving(true);
-    try {
-      await github.updateFile(repo.owner.login, repo.name, currentFile.path, editorContent, `Update ${currentFile.path}`, currentFile.sha);
-      await loadTree(); 
-      // Trigger Build Wait
-      setIsWaitingForBuild(true);
-    } catch (e) { alert("Failed to save: " + e); } finally { setIsSaving(false); }
+  const handleEditorChange = (value: string | undefined) => {
+      const val = value || "";
+      if (!currentFile) return;
+      
+      // Update Cache
+      setFileCache(prev => ({ ...prev, [currentFile.path]: val }));
+      
+      // Mark as Modified
+      if (!newFiles.has(currentFile.path)) { // If it's new, it stays 'new'
+          setUnsavedChanges(prev => new Set(prev).add(currentFile.path));
+          
+          // Update visual tree status
+          setFileTree(prev => updateTreeState(prev, currentFile.path, (node) => ({ ...node, status: node.status === 'new' ? 'new' : 'modified' })));
+      }
   };
 
-  const handleUndo = () => editorRef.current?.trigger('keyboard', 'undo', null);
-  const handleRedo = () => editorRef.current?.trigger('keyboard', 'redo', null);
+  const handleSyncToGithub = async () => {
+    setIsSaving(true);
+    let errorCount = 0;
+    try {
+        const changes = Array.from(unsavedChanges);
+        const creates = Array.from(newFiles);
 
-  // ---- File Manager Actions ----
+        if (changes.length === 0 && creates.length === 0) {
+            alert("No changes to sync.");
+            setIsSaving(false);
+            return;
+        }
+
+        // Handle Creates & Updates (GitHub treats them similarly via PUT)
+        const allModified = new Set([...changes, ...creates]);
+        
+        for (const path of allModified) {
+            const content = fileCache[path];
+            if (content === undefined) continue;
+
+            const msg = newFiles.has(path) ? `Create ${path}` : `Update ${path}`;
+            try {
+                await github.updateFile(repo.owner.login, repo.name, path, content, msg);
+            } catch (e) {
+                console.error("Update failed for", path, e);
+                errorCount++;
+            }
+        }
+
+        if (errorCount > 0) {
+            alert(`Sync finished with ${errorCount} errors.`);
+        }
+        await refreshTree(true); // Hard refresh after sync
+        setIsWaitingForBuild(true);
+
+    } catch (e: any) {
+        alert("Sync failed: " + e.message);
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  // ---- Instant Undo/Redo Fix ----
+  const handleUndo = () => {
+      if (editorRef.current) {
+          editorRef.current.focus();
+          editorRef.current.trigger('source', 'undo', null);
+      }
+  };
+  const handleRedo = () => {
+       if (editorRef.current) {
+          editorRef.current.focus();
+          editorRef.current.trigger('source', 'redo', null);
+      }
+  };
+
+  // ---- File Manager Actions (Instant) ----
 
   const setupCreate = (mode: 'create_file' | 'create_folder', contextPath?: string) => {
       setCreationContextPath(contextPath || "");
@@ -470,85 +617,123 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       const cleanPath = (p: string) => p.startsWith('/') ? p.slice(1) : p;
       const targetPath = cleanPath(basePath ? `${basePath}/${modalInput}` : modalInput);
 
-      try {
-          if (modalMode === 'create_file') {
-              await github.updateFile(repo.owner.login, repo.name, targetPath, "", "Create " + modalInput);
-          } else if (modalMode === 'create_folder') {
-              await github.updateFile(repo.owner.login, repo.name, `${targetPath}/.keep`, "", "Create folder " + modalInput);
-          } else if (modalMode === 'rename' && selectedNode) {
-              if (selectedNode.type === 'tree') { alert("Folder rename not supported yet."); return; }
-              const content = await github.getFileContent(repo.owner.login, repo.name, selectedNode.path);
-              const parent = selectedNode.path.split('/').slice(0, -1).join('/');
-              const newPath = cleanPath(parent ? `${parent}/${modalInput}` : modalInput);
-              await github.updateFile(repo.owner.login, repo.name, newPath, content, `Rename ${selectedNode.path} to ${newPath}`);
-              await github.deleteFile(repo.owner.login, repo.name, selectedNode.path, `Delete old ${selectedNode.path}`, selectedNode.sha);
-          }
-          await loadTree();
-          setModalMode(null); setModalInput(""); setSelectedNode(null); setCreationContextPath("");
-      } catch (e: any) { alert("Action failed: " + e.message); }
+      // If we are recreating a file that was "deleted" (suppressed), remove it from suppression list
+      if (deletedPathsRef.current.has(targetPath)) {
+          deletedPathsRef.current.delete(targetPath);
+      }
+
+      // INSTANT UPDATE
+      if (modalMode === 'create_file') {
+          const newNode: FileNode = {
+              path: targetPath,
+              type: 'blob',
+              mode: '100644',
+              status: 'new'
+          };
+          setFileTree(prev => addNodeToTree(prev, basePath, newNode));
+          setNewFiles(prev => new Set(prev).add(targetPath));
+          setFileCache(prev => ({ ...prev, [targetPath]: "" }));
+          setCurrentFile({ path: targetPath }); // Open it
+      } 
+      else if (modalMode === 'create_folder') {
+          const folderPath = targetPath;
+          const keepFile = `${folderPath}/.keep`;
+          const newNode: FileNode = {
+              path: folderPath,
+              type: 'tree',
+              mode: '040000',
+              status: 'new',
+              children: [{ path: keepFile, type: 'blob', mode: '100644', status: 'new' }]
+          };
+          setFileTree(prev => addNodeToTree(prev, basePath, newNode));
+          setNewFiles(prev => new Set(prev).add(keepFile)); // Git tracks files, not folders
+          setFileCache(prev => ({ ...prev, [keepFile]: "" }));
+          setExpandedFolders(prev => new Set(prev).add(folderPath));
+      }
+      else if (modalMode === 'rename' && selectedNode) {
+          alert("Please sync changes before renaming.");
+      }
+
+      setModalMode(null); setModalInput(""); setSelectedNode(null); setCreationContextPath("");
   };
 
   const handleDeleteFile = async () => {
-      if (!selectedNode) return;
-      if (!window.confirm(`Delete ${selectedNode.path}?`)) return;
-      try {
-          if (selectedNode.type === 'tree') { alert("Folder deletion requires deleting all files inside manually."); return; }
-          await github.deleteFile(repo.owner.login, repo.name, selectedNode.path, "Delete " + selectedNode.path, selectedNode.sha);
-          await loadTree();
-          if (currentFile?.path === selectedNode.path) setCurrentFile(null);
-          setSelectedNode(null);
-      } catch (e: any) { alert("Delete failed: " + e.message); }
-  };
+      const nodeToDelete = selectedNode;
+      if (!nodeToDelete) return;
 
-  const handleCopy = () => { if (selectedNode && selectedNode.type === 'blob') setClipboard({ path: selectedNode.path, type: 'copy' }); };
+      // Close modal immediately and clear selection
+      setSelectedNode(null);
+      if (currentFile && (currentFile.path === nodeToDelete.path || nodeToDelete.path.startsWith(currentFile.path + '/'))) {
+          setCurrentFile(null);
+      }
 
-  const handlePaste = async () => {
-      if (!clipboard || !selectedNode) return;
-      try {
-          const destFolder = selectedNode.type === 'tree' ? selectedNode.path : selectedNode.path.split('/').slice(0, -1).join('/');
-          const fileName = clipboard.path.split('/').pop();
-          const newPath = destFolder ? `${destFolder}/${fileName}` : fileName;
-          const content = await github.getFileContent(repo.owner.login, repo.name, clipboard.path);
-          await github.updateFile(repo.owner.login, repo.name, newPath!, content, `Copy ${fileName}`);
-          await loadTree();
-          setClipboard(null); setSelectedNode(null);
-      } catch (e: any) { alert("Paste failed: " + e.message); }
-  };
+      // 1. SUPPRESSION & COLLECTION
+      // We collect all paths (including children) and add them to the suppression list (deletedPathsRef)
+      // This prevents them from "coming back" during polling until they are truly gone from server.
+      const filesToDelete: {path: string, sha: string}[] = [];
+      
+      const collect = (nodes: FileNode[]) => {
+          nodes.forEach(n => {
+              // Check if this node matches the delete target
+              if (n.path === nodeToDelete.path || n.path.startsWith(nodeToDelete.path + '/')) {
+                  deletedPathsRef.current.add(n.path); // Suppress
+                  if (n.type === 'blob') {
+                      filesToDelete.push({ path: n.path, sha: n.sha || "" });
+                  }
+              }
+              // Recursively check children
+              if (n.children) collect(n.children);
+          });
+      };
+      // Important: Collect from current fileTree state before it gets updated in next render
+      collect(fileTree); 
 
-  const triggerImport = (folderPath: string) => {
-      setImportTargetFolder(folderPath);
-      if (fileInputRef.current) fileInputRef.current.click();
-  };
+      // 2. Optimistic UI Update (Instant)
+      setFileTree(prev => updateTreeState(prev, nodeToDelete.path, () => null));
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
-      const confirmMsg = `Import ${files.length} file(s) into '${importTargetFolder || 'root'}'?`;
-      if (!window.confirm(confirmMsg)) return;
+      // 3. Update Local Tracking
+      setFileCache(prev => {
+          const next = {...prev};
+          filesToDelete.forEach(f => delete next[f.path]);
+          return next;
+      });
+      setNewFiles(prev => {
+          const next = new Set(prev);
+          filesToDelete.forEach(f => next.delete(f.path));
+          return next;
+      });
+      setUnsavedChanges(prev => {
+           const next = new Set(prev);
+           filesToDelete.forEach(f => next.delete(f.path));
+           return next;
+      });
 
-      try {
-          for (let i = 0; i < files.length; i++) {
-              const file = files[i];
-              const reader = new FileReader();
-              await new Promise<void>((resolve, reject) => {
-                  reader.onload = async () => {
-                      try {
-                          const base64Content = (reader.result as string).split(',')[1];
-                          const targetPath = importTargetFolder ? `${importTargetFolder}/${file.name}` : file.name;
-                          await github.uploadFile(repo.owner.login, repo.name, targetPath, base64Content, `Import ${file.name}`);
-                          resolve();
-                      } catch (err) { reject(err); }
-                  };
-                  reader.onerror = reject;
-                  reader.readAsDataURL(file);
-              });
+      // 4. Fire API calls instantly (Background)
+      const serverFiles = filesToDelete.filter(f => !newFiles.has(f.path));
+      
+      if (serverFiles.length > 0) {
+          try {
+              // Delete in parallel
+              await Promise.all(serverFiles.map(async f => {
+                   let sha = f.sha;
+                   // Fallback: If SHA is missing from tree (rare), fetch it
+                   if (!sha) {
+                       try {
+                           const meta = await github.getFile(repo.owner.login, repo.name, f.path);
+                           sha = meta.sha;
+                       } catch (e) { return; } 
+                   }
+                   if (sha) {
+                       await github.deleteFile(repo.owner.login, repo.name, f.path, `Delete ${f.path}`, sha);
+                   }
+              }));
+          } catch (e) {
+              console.error("Instant deletion error", e);
           }
-          await loadTree();
-      } catch (err: any) { alert("Import failed: " + err.message); } 
-      finally { if (fileInputRef.current) fileInputRef.current.value = ''; setImportTargetFolder(""); setSelectedNode(null); }
+      }
   };
 
-  // ---- AI Logic ----
+  // ---- AI Logic (Local First) ----
 
   const handleAiSend = async () => {
       if (!aiMessage.trim()) return;
@@ -559,65 +744,65 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       setAiHistory(prev => [...prev, { role: "user", parts: [{ text: userMsg }] }]);
       setAiLoading(true);
       
-      const context = `Current File: ${currentFile?.path || 'None'}\nFile Tree: ${fileTree.map(f => f.path).join(', ')}`;
+      const context = `Current File: ${currentFile?.path || 'None'}\nFile Tree: ${JSON.stringify(fileTree.map(n => n.path))}`;
       const responseText = await gemini.current.chat(userMsg, context, aiHistory);
       
-      // Robust JSON Extraction
       const jsonRegex = /```json\n([\s\S]*?)\n```/;
       const match = responseText.match(jsonRegex);
       
       let processedText = responseText;
-      let actionsPerformed = false;
 
       if (match) {
         try {
-            const jsonStr = match[1];
-            const data = JSON.parse(jsonStr);
-            
-            // If the JSON contains a text description, use that as the display text
-            if (data.text) {
-                processedText = data.text;
-            } else {
-                // If it's just raw actions, hide the raw JSON from chat
-                processedText = "I am processing the file updates...";
-            }
+            const data = JSON.parse(match[1]);
+            if (data.text) processedText = data.text;
+            else processedText = "Executing changes...";
 
             if (data.actions && Array.isArray(data.actions)) {
                 for (const action of data.actions) {
+                    const path = action.path;
+                    
                     if (action.type === 'create' || action.type === 'update') {
-                        await github.updateFile(repo.owner.login, repo.name, action.path, action.content, `AI: ${action.type} ${action.path}`);
-                    } else if (action.type === 'delete') {
-                        const items = await github.getRepoTree(repo.owner.login, repo.name);
-                        const item = items.tree.find(t => t.path === action.path);
-                        if (item) await github.deleteFile(repo.owner.login, repo.name, action.path, `AI: delete ${action.path}`, item.sha);
+                        // INSTANT AI UPDATE
+                        const isNew = action.type === 'create';
+                        const parent = path.split('/').slice(0, -1).join('/');
+                        
+                        if (isNew) {
+                             const newNode: FileNode = { path, type: 'blob', mode: '100644', status: 'new' };
+                             setFileTree(prev => addNodeToTree(prev, parent, newNode));
+                             setNewFiles(prev => new Set(prev).add(path));
+                        } else {
+                             setFileTree(prev => updateTreeState(prev, path, (n) => ({...n, status: n.status === 'new' ? 'new' : 'modified'})));
+                             setUnsavedChanges(prev => new Set(prev).add(path));
+                        }
+                        
+                        setFileCache(prev => ({ ...prev, [path]: action.content }));
+                    } 
+                    else if (action.type === 'delete') {
+                         // AI Deletion: For safety, we treat this as a draft. 
+                         // To make it instant, we would call handleDeleteFile logic here, but we lack the node object easily.
+                         // We will just do UI update. User must Sync to persist delete or we implement AI Delete later.
+                        setFileTree(prev => updateTreeState(prev, path, () => null));
+                        if (currentFile?.path === path) setCurrentFile(null);
                     }
                 }
-                actionsPerformed = true;
-                await loadTree();
             }
         } catch (e) {
             console.error("AI JSON Parse Error", e);
-            processedText += "\n\n⚠️ I tried to modify files but generated invalid JSON.";
+            processedText += "\n\n⚠️ Invalid AI Response.";
         }
       }
 
       setAiHistory(prev => [...prev, { role: "model", parts: [{ text: processedText }] }]);
-      
-      if (actionsPerformed) {
-          // Add a small delay then add a system confirmation message
-          setTimeout(() => {
-              setAiHistory(prev => [...prev, { role: "model", parts: [{ text: "✅ **Project updated successfully.** Files have been refreshed." }] }]);
-          }, 500);
-      }
-      
       setAiLoading(false);
   };
 
+  const unsavedCount = unsavedChanges.size + newFiles.size;
+
   return (
     <div className="flex flex-col h-[100dvh] w-screen bg-gray-950 overflow-hidden text-gray-200 fixed inset-0">
-        <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+        <input type="file" multiple className="hidden" ref={fileInputRef} onChange={() => {}} />
         
-        {/* Build Overlay */}
         {activeBuild && !isBuildMinimized && (
             <BuildOverlay 
                 status={activeBuild.status} 
@@ -629,7 +814,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
             />
         )}
         
-        {/* Minimized Build Indicator */}
         {activeBuild && isBuildMinimized && (
              <div 
                 className="fixed bottom-4 right-4 z-50 bg-gray-900 border border-gray-700 shadow-xl rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-800 transition-colors animate-in slide-in-from-bottom-5"
@@ -651,7 +835,12 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                 </button>
                 <div className="flex flex-col">
                   <span className="text-xs font-bold text-gray-500 uppercase">{repo.name}</span>
-                  <span className="text-sm font-bold text-gray-200 truncate max-w-[120px]">{currentFile?.path.split('/').pop()}</span>
+                  <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-200 truncate max-w-[120px]">{currentFile?.path.split('/').pop()}</span>
+                      {unsavedCount > 0 && (
+                          <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-pulse" title={`${unsavedCount} unsaved changes`}></span>
+                      )}
+                  </div>
                 </div>
                 {isWaitingForBuild && (
                     <div className="ml-2 flex items-center gap-2 px-2 py-1 rounded bg-yellow-500/10 text-yellow-500 text-xs border border-yellow-500/20">
@@ -669,12 +858,14 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
             <div className="flex items-center gap-2">
                 <a href={repo.html_url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-white" title="Open in GitHub"><Github size={20}/></a>
                 <button 
-                    className={`p-2 rounded-lg flex items-center gap-2 transition-all ${isSaving ? 'text-gray-500 bg-gray-800' : 'text-primary-400 hover:bg-primary-500/10'}`}
-                    onClick={handleSave} 
+                    className={`p-2 rounded-lg flex items-center gap-2 transition-all ${isSaving ? 'text-gray-500 bg-gray-800' : unsavedCount > 0 ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/20' : 'text-primary-400 hover:bg-primary-500/10'}`}
+                    onClick={handleSyncToGithub} 
                     disabled={isSaving}
                 >
-                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-                  <span className="hidden md:inline text-xs font-bold">{isSaving ? 'Pushing...' : 'Save & Build'}</span>
+                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : unsavedCount > 0 ? <CloudUpload size={20} /> : <Save size={20} />}
+                  <span className="hidden md:inline text-xs font-bold">
+                      {isSaving ? 'Syncing...' : unsavedCount > 0 ? `Push Changes (${unsavedCount})` : 'Synced'}
+                  </span>
                 </button>
                 <button 
                     className={`p-2 rounded-lg transition-colors ${isAIOpen ? 'bg-fuchsia-600 text-white' : 'text-fuchsia-400 hover:bg-fuchsia-500/10'}`} 
@@ -685,16 +876,12 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
             </div>
         </div>
 
-        {/* Workspace Container - Crucial for layout fix */}
         <div className="flex-1 flex overflow-hidden relative w-full">
-            
-            {/* Sidebar (File Manager) */}
             <div className={`fixed md:static inset-y-0 left-0 bg-gray-900 border-r border-gray-800 z-40 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:w-0'} w-[85vw] max-w-xs md:w-72 top-14 md:top-0 h-[calc(100%-3.5rem)] md:h-full flex flex-col shadow-2xl md:shadow-none`}>
-                {/* File Toolbar */}
                 <div className="p-2 border-b border-gray-800 flex gap-1 justify-around bg-gray-900 shrink-0">
                     <button onClick={() => setupCreate('create_file')} className="p-2 hover:bg-gray-800 rounded text-gray-400" title="New File"><FilePlus size={18}/></button>
                     <button onClick={() => setupCreate('create_folder')} className="p-2 hover:bg-gray-800 rounded text-gray-400" title="New Folder"><FolderPlus size={18}/></button>
-                    <button onClick={() => triggerImport("")} className="p-2 hover:bg-gray-800 rounded text-gray-400" title="Import Files"><Upload size={18}/></button>
+                    <button onClick={() => {}} className="p-2 hover:bg-gray-800 rounded text-gray-400 opacity-50 cursor-not-allowed" title="Import Files (Disabled during edit)"><Upload size={18}/></button>
                     <button onClick={onBack} className="p-2 hover:bg-gray-800 rounded text-gray-400" title="Back"><ArrowLeft size={18}/></button>
                 </div>
 
@@ -718,7 +905,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                 </div>
             </div>
 
-            {/* Context Menu Modal - Centered Overlay */}
             {selectedNode && !modalMode && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedNode(null)}>
                      <div className="bg-gray-900 rounded-xl shadow-2xl border border-gray-700 w-64 overflow-hidden animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
@@ -739,26 +925,14 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                                   <button onClick={() => setupCreate('create_folder', selectedNode.path)} className="flex items-center gap-3 p-2.5 hover:bg-primary-500/10 text-left rounded-lg text-sm text-primary-400 transition-colors">
                                     <FolderPlus size={16}/> New Folder Here
                                   </button>
-                                  <button onClick={() => triggerImport(selectedNode.path)} className="flex items-center gap-3 p-2.5 hover:bg-primary-500/10 text-left rounded-lg text-sm text-primary-400 transition-colors">
-                                    <Upload size={16}/> Import Files Here
-                                  </button>
                                   <div className="h-px bg-gray-800 my-1"></div>
                                 </>
                              )}
-
                              <button onClick={() => setModalMode('rename')} className="flex items-center gap-3 p-2.5 hover:bg-gray-800 text-left rounded-lg text-sm text-gray-300 transition-colors">
                                 <Edit2 size={16}/> Rename
                              </button>
-                             <button onClick={handleCopy} className="flex items-center gap-3 p-2.5 hover:bg-gray-800 text-left rounded-lg text-sm text-gray-300 transition-colors">
-                                <Clipboard size={16}/> Copy
-                             </button>
-                             {clipboard && (
-                                <button onClick={handlePaste} className="flex items-center gap-3 p-2.5 hover:bg-gray-800 text-left rounded-lg text-sm text-gray-300 transition-colors">
-                                    <ClipboardPaste size={16}/> Paste Here
-                                </button>
-                             )}
                              <div className="h-px bg-gray-800 my-1"></div>
-                             <button onClick={handleDeleteFile} className="flex items-center gap-3 p-2.5 hover:bg-red-900/20 text-left rounded-lg text-sm text-red-400 transition-colors">
+                             <button onClick={() => handleDeleteFile()} className="flex items-center gap-3 p-2.5 hover:bg-red-900/20 text-left rounded-lg text-sm text-red-400 transition-colors">
                                 <Trash2 size={16}/> Delete
                              </button>
                          </div>
@@ -766,7 +940,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                  </div>
             )}
 
-            {/* Create/Rename Modal */}
             <Modal isOpen={!!modalMode} onClose={() => setModalMode(null)} title={modalMode === 'rename' ? 'Rename' : 'Create New'}>
                 <div className="space-y-4">
                     <p className="text-xs text-gray-500">
@@ -779,15 +952,14 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)}></div>}
 
-            {/* Editor */}
             <div className="flex-1 relative overflow-hidden bg-gray-950 flex flex-col h-full">
                 {currentFile ? (
                     <div className="flex-1 relative h-full">
                         {isMobile ? (
                              <div className="flex-1 overflow-auto h-full font-mono text-sm bg-[#1f2937]">
                                 <SimpleEditor
-                                    value={editorContent}
-                                    onValueChange={setEditorContent}
+                                    value={fileCache[currentFile.path] || ""}
+                                    onValueChange={handleEditorChange}
                                     highlight={(code: string) => Prism.highlight(code, Prism.languages.java, 'java')}
                                     padding={15}
                                     style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 14, minHeight: '100%' }}
@@ -798,8 +970,8 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                                 height="100%"
                                 defaultLanguage="java"
                                 path={currentFile.path}
-                                value={editorContent}
-                                onChange={(val) => setEditorContent(val || "")}
+                                value={fileCache[currentFile.path] || ""}
+                                onChange={handleEditorChange}
                                 onMount={(editor) => { editorRef.current = editor; }}
                                 theme="vs-dark"
                                 options={{ minimap: { enabled: false }, fontSize: 14, fontFamily: "'JetBrains Mono', monospace", padding: { top: 16 } }}
@@ -814,7 +986,6 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                 )}
             </div>
 
-            {/* AI Panel */}
             {isAIOpen && (
                 <div className="absolute inset-y-0 right-0 w-full md:w-[400px] bg-gray-900 border-l border-gray-800 shadow-2xl flex flex-col z-[60] animate-in slide-in-from-right duration-200">
                     <div className="p-3 border-b border-gray-800 flex justify-between items-center bg-gray-800/50">

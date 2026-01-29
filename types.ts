@@ -21,9 +21,11 @@ export interface FileNode {
   path: string;
   mode: string;
   type: 'blob' | 'tree';
-  sha: string;
+  sha?: string; // Optional because new local files won't have a SHA yet
   size?: number;
-  url: string;
+  url?: string;
+  children?: FileNode[]; // For local tree structure
+  status?: 'new' | 'modified' | 'deleted' | 'synced'; // Track local state
 }
 
 export interface FileContent {

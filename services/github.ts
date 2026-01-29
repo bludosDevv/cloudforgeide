@@ -54,6 +54,10 @@ export class GitHubService {
     }
   }
 
+  async getFile(owner: string, repo: string, path: string): Promise<FileContent> {
+    return this.request<FileContent>(`/repos/${owner}/${repo}/contents/${path}`);
+  }
+
   async getFileContent(owner: string, repo: string, path: string): Promise<string> {
     const data = await this.request<FileContent>(`/repos/${owner}/${repo}/contents/${path}`);
     if (data.content && data.encoding === 'base64') {
