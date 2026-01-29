@@ -10,7 +10,7 @@ import 'prismjs/components/prism-json';
 
 import { FileNode, Repository, WorkflowRun, Artifact } from '../types';
 import { GitHubService } from '../services/github';
-import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound, Settings, CloudUpload } from 'lucide-react';
+import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound, Settings, UploadCloud } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
 import { Button, Modal, Input, Select } from './ui';
 
@@ -862,7 +862,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                     onClick={handleSyncToGithub} 
                     disabled={isSaving}
                 >
-                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : unsavedCount > 0 ? <CloudUpload size={20} /> : <Save size={20} />}
+                  {isSaving ? <Loader2 size={20} className="animate-spin" /> : unsavedCount > 0 ? <UploadCloud size={20} /> : <Save size={20} />}
                   <span className="hidden md:inline text-xs font-bold">
                       {isSaving ? 'Syncing...' : unsavedCount > 0 ? `Push Changes (${unsavedCount})` : 'Synced'}
                   </span>
