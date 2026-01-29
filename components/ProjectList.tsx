@@ -35,7 +35,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
   
   // AI Settings State
   const [apiKey, setApiKey] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-3-pro-preview');
+  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
 
   const [newProject, setNewProject] = useState<NewProjectConfig & { customVersion: boolean }>({
     name: '',
@@ -397,8 +397,8 @@ const ProjectList: React.FC<ProjectListProps> = ({ repos: initialRepos, user, on
                     value={selectedModel}
                     onChange={(e: any) => setSelectedModel(e.target.value)}
                     options={[
-                        { value: 'gemini-3-pro-preview', label: 'Gemini 3.0 Pro (Complex Logic & Coding)' },
                         { value: 'gemini-3-flash-preview', label: 'Gemini 3.0 Flash (Fast & Efficient)' },
+                        { value: 'gemini-3-pro-preview', label: 'Gemini 3.0 Pro (Complex Logic & Reasoning)' },
                     ]}
                 />
 

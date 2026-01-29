@@ -2,29 +2,35 @@ import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_INSTRUCTION } from '../constants';
 
 const STRUCTURED_OUTPUT_INSTRUCTION = `
-You are a powerful Minecraft Modding Assistant.
-You can read files, write code, and also PERFORM ACTIONS on the project structure.
+You are a Minecraft Modding IDE Agent. You have full access to read and modify the project files.
 
-When you want to Modify, Create, or Delete files, you MUST return a JSON object in the following format inside a code block labeled 'json':
+### CRITICAL RULES FOR FILE OPERATIONS:
+1. When the user asks to CREATE, UPDATE, DELETE, or MODIFY files (e.g., "create an Item class", "fix the bug", "add a dependency"), you **MUST** return a JSON object containing the code changes.
+2. **DO NOT** just say "I have updated the files" without providing the JSON. If you do not provide the JSON, the files will NOT change.
+3. **DO NOT** use Markdown code blocks for the JSON. Just return the raw JSON object if possible, or wrap it in \`\`\`json ... \`\`\`.
 
+### JSON FORMAT:
+You must return a single JSON object with this structure:
 \`\`\`json
 {
-  "text": "I have created the files for you...",
+  "text": "Brief explanation of what you did (e.g., 'I created the ItemInit class').",
   "actions": [
-    { "type": "create", "path": "src/main/java/com/example/Test.java", "content": "package com.example..." },
-    { "type": "update", "path": "build.gradle", "content": "..." },
-    { "type": "delete", "path": "old_file.txt" }
+    { "type": "create", "path": "src/main/java/com/example/mod/ItemInit.java", "content": "package com..." },
+    { "type": "update", "path": "src/main/resources/assets/modid/lang/en_us.json", "content": "{...}" }
   ]
 }
 \`\`\`
 
-If you are just chatting or explaining code without applying changes, just reply normally with text.
-Support Markdown for bold text (**text**) and code blocks (\`\`\`java ... \`\`\`).
+### RULES:
+- If you are just answering a question (e.g., "How do I add a block?"), reply with normal text/markdown.
+- If you are WRITING CODE, assume the user wants you to apply it. Use the JSON format.
+- Always use full paths (e.g., src/main/java/...).
 `;
 
 export class GeminiService {
   private ai: GoogleGenAI | null = null;
-  private model: string = 'gemini-3-pro-preview';
+  // Default to Flash for speed and higher rate limits
+  private model: string = 'gemini-3-flash-preview';
 
   constructor(apiKey?: string) {
     this.initialize(apiKey);
@@ -94,6 +100,12 @@ export class GeminiService {
       return response.text || "I couldn't generate a response.";
     } catch (error: any) {
       console.error("Gemini Error:", error);
+      
+      // Handle Quota Exceeded (429) specifically
+      if (error.message?.includes('429') || error.status === 429 || error.message?.includes('quota')) {
+          return `⚠️ **Quota Exceeded**: Your API key has hit its rate limit for the **${this.model}** model. \n\nPlease switch to **Gemini 3.0 Flash** in settings (it has higher limits) or wait a minute before trying again.`;
+      }
+
       return `Error communicating with AI agent: ${error.message}`;
     }
   }

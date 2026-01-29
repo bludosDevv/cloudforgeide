@@ -12,7 +12,7 @@ import { FileNode, Repository, WorkflowRun, Artifact } from '../types';
 import { GitHubService } from '../services/github';
 import { Folder, FileText, ChevronRight, ChevronDown, Menu, Save, Play, Bot, ArrowLeft, Loader2, X, Code2, Copy, Undo, Redo, CheckCircle2, AlertCircle, ExternalLink, MoreVertical, FilePlus, FolderPlus, Trash2, Edit2, Clipboard, ClipboardPaste, Github, Upload, Terminal, Download, Minus, KeyRound, Settings } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
-import { Button, Modal, Input } from './ui';
+import { Button, Modal, Input, Select } from './ui';
 
 interface IDEProps {
   repo: Repository;
@@ -73,7 +73,15 @@ const FileTreeItem = ({ node, level, onSelect, expandedFolders, toggleFolder, se
 
 // Simple Markdown Renderer for AI Messages
 const AiMessageRenderer = ({ text }: { text: string }) => {
-  if (text.trim().startsWith('```json')) return <span className="text-xs text-gray-500 italic">Executing actions...</span>;
+  // If the text looks like raw JSON actions, hide it and show a status
+  if (text.trim().startsWith('{') && text.includes('"actions"')) {
+       try {
+           const parsed = JSON.parse(text);
+           return <span>{parsed.text}</span>;
+       } catch (e) {
+           return <span className="text-xs text-gray-500 italic">Executing AI actions...</span>;
+       }
+  }
 
   const parts = text.split(/(```[\s\S]*?```)/g);
 
@@ -85,6 +93,8 @@ const AiMessageRenderer = ({ text }: { text: string }) => {
           const lang = match ? match[1] : '';
           const code = match ? match[2] : part.slice(3, -3);
           
+          if (lang === 'json') return null; // Don't render the raw action JSON block
+
           return (
             <div key={idx} className="bg-gray-950 rounded-lg border border-gray-700 overflow-hidden my-2">
                <div className="flex justify-between items-center px-3 py-1.5 bg-gray-800/50 border-b border-gray-800 text-xs text-gray-400">
@@ -267,6 +277,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   // AI Configuration State
   const [isAiReady, setIsAiReady] = useState(false);
   const [inlineApiKey, setInlineApiKey] = useState("");
+  const [inlineModel, setInlineModel] = useState("gemini-3-flash-preview");
   const [showAiSettings, setShowAiSettings] = useState(false);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -294,6 +305,10 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
           } else {
               setIsAiReady(false);
           }
+          
+          const storedModel = localStorage.getItem('gemini_model');
+          if (storedModel) setInlineModel(storedModel);
+
       } catch (e) {
           console.error("Gemini init failed:", e);
           setIsAiReady(false);
@@ -312,8 +327,13 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   };
   
   const handleSaveInlineKey = () => {
-      if (!gemini.current || !inlineApiKey.trim()) return;
-      gemini.current.updateConfiguration(inlineApiKey.trim());
+      if (!gemini.current) return;
+      
+      if (inlineApiKey.trim()) {
+        gemini.current.updateConfiguration(inlineApiKey.trim());
+      }
+      gemini.current.updateConfiguration(undefined as any, inlineModel);
+      
       setIsAiReady(true);
       setShowAiSettings(false);
   };
@@ -542,33 +562,54 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       const context = `Current File: ${currentFile?.path || 'None'}\nFile Tree: ${fileTree.map(f => f.path).join(', ')}`;
       const responseText = await gemini.current.chat(userMsg, context, aiHistory);
       
-      const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
-      let displayText = responseText;
+      // Robust JSON Extraction
+      const jsonRegex = /```json\n([\s\S]*?)\n```/;
+      const match = responseText.match(jsonRegex);
+      
+      let processedText = responseText;
+      let actionsPerformed = false;
 
-      if (jsonMatch) {
-          try {
-              const data = JSON.parse(jsonMatch[1]);
-              displayText = data.text;
-              if (data.actions && Array.isArray(data.actions)) {
-                  for (const action of data.actions) {
-                      if (action.type === 'create' || action.type === 'update') {
-                          await github.updateFile(repo.owner.login, repo.name, action.path, action.content, `AI: ${action.type} ${action.path}`);
-                      } else if (action.type === 'delete') {
-                          const items = await github.getRepoTree(repo.owner.login, repo.name);
-                          const item = items.tree.find(t => t.path === action.path);
-                          if (item) await github.deleteFile(repo.owner.login, repo.name, action.path, `AI: delete ${action.path}`, item.sha);
-                      }
-                  }
-                  await loadTree();
-                  displayText += "\n\n✅ **Project updated successfully.**";
-              }
-          } catch (e) {
-              console.error("AI JSON Error", e);
-              displayText += "\n\n⚠️ Failed to execute AI actions automatically.";
-          }
+      if (match) {
+        try {
+            const jsonStr = match[1];
+            const data = JSON.parse(jsonStr);
+            
+            // If the JSON contains a text description, use that as the display text
+            if (data.text) {
+                processedText = data.text;
+            } else {
+                // If it's just raw actions, hide the raw JSON from chat
+                processedText = "I am processing the file updates...";
+            }
+
+            if (data.actions && Array.isArray(data.actions)) {
+                for (const action of data.actions) {
+                    if (action.type === 'create' || action.type === 'update') {
+                        await github.updateFile(repo.owner.login, repo.name, action.path, action.content, `AI: ${action.type} ${action.path}`);
+                    } else if (action.type === 'delete') {
+                        const items = await github.getRepoTree(repo.owner.login, repo.name);
+                        const item = items.tree.find(t => t.path === action.path);
+                        if (item) await github.deleteFile(repo.owner.login, repo.name, action.path, `AI: delete ${action.path}`, item.sha);
+                    }
+                }
+                actionsPerformed = true;
+                await loadTree();
+            }
+        } catch (e) {
+            console.error("AI JSON Parse Error", e);
+            processedText += "\n\n⚠️ I tried to modify files but generated invalid JSON.";
+        }
       }
 
-      setAiHistory(prev => [...prev, { role: "model", parts: [{ text: displayText }] }]);
+      setAiHistory(prev => [...prev, { role: "model", parts: [{ text: processedText }] }]);
+      
+      if (actionsPerformed) {
+          // Add a small delay then add a system confirmation message
+          setTimeout(() => {
+              setAiHistory(prev => [...prev, { role: "model", parts: [{ text: "✅ **Project updated successfully.** Files have been refreshed." }] }]);
+          }, 500);
+      }
+      
       setAiLoading(false);
   };
 
@@ -677,28 +718,51 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                 </div>
             </div>
 
-            {/* Context Menu Modal */}
+            {/* Context Menu Modal - Centered Overlay */}
             {selectedNode && !modalMode && (
-                 <div className="absolute left-0 top-0 z-50 p-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 m-2 flex flex-col gap-2 min-w-[220px] animate-in zoom-in-95">
-                     <div className="flex justify-between items-center px-2 pb-2 border-b border-gray-700">
-                        <span className="text-xs font-bold truncate max-w-[150px] text-gray-400">{selectedNode.path.split('/').pop()}</span>
-                        <button onClick={() => setSelectedNode(null)}><X size={14}/></button>
-                     </div>
-                     
-                     {selectedNode.type === 'tree' && (
-                        <>
-                          <button onClick={() => setupCreate('create_file', selectedNode.path)} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm text-primary-400"><FilePlus size={16}/> New File Here</button>
-                          <button onClick={() => setupCreate('create_folder', selectedNode.path)} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm text-primary-400"><FolderPlus size={16}/> New Folder Here</button>
-                          <button onClick={() => triggerImport(selectedNode.path)} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm text-primary-400"><Upload size={16}/> Import Files Here</button>
-                          <div className="h-px bg-gray-700 my-1"></div>
-                        </>
-                     )}
+                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedNode(null)}>
+                     <div className="bg-gray-900 rounded-xl shadow-2xl border border-gray-700 w-64 overflow-hidden animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+                         <div className="flex justify-between items-center p-3 border-b border-gray-800 bg-gray-800/50">
+                            <span className="text-xs font-bold truncate max-w-[150px] text-gray-300 flex items-center gap-2">
+                                {selectedNode.type === 'tree' ? <Folder size={14} className="text-primary-400"/> : <FileText size={14}/>}
+                                {selectedNode.path.split('/').pop()}
+                            </span>
+                            <button onClick={() => setSelectedNode(null)} className="text-gray-500 hover:text-white"><X size={16}/></button>
+                         </div>
+                         
+                         <div className="p-2 flex flex-col gap-1">
+                             {selectedNode.type === 'tree' && (
+                                <>
+                                  <button onClick={() => setupCreate('create_file', selectedNode.path)} className="flex items-center gap-3 p-2.5 hover:bg-primary-500/10 text-left rounded-lg text-sm text-primary-400 transition-colors">
+                                    <FilePlus size={16}/> New File Here
+                                  </button>
+                                  <button onClick={() => setupCreate('create_folder', selectedNode.path)} className="flex items-center gap-3 p-2.5 hover:bg-primary-500/10 text-left rounded-lg text-sm text-primary-400 transition-colors">
+                                    <FolderPlus size={16}/> New Folder Here
+                                  </button>
+                                  <button onClick={() => triggerImport(selectedNode.path)} className="flex items-center gap-3 p-2.5 hover:bg-primary-500/10 text-left rounded-lg text-sm text-primary-400 transition-colors">
+                                    <Upload size={16}/> Import Files Here
+                                  </button>
+                                  <div className="h-px bg-gray-800 my-1"></div>
+                                </>
+                             )}
 
-                     <button onClick={() => setModalMode('rename')} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm"><Edit2 size={16}/> Rename</button>
-                     <button onClick={handleCopy} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm"><Clipboard size={16}/> Copy</button>
-                     {clipboard && <button onClick={handlePaste} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded text-sm"><ClipboardPaste size={16}/> Paste to here</button>}
-                     <div className="h-px bg-gray-700 my-1"></div>
-                     <button onClick={handleDeleteFile} className="flex items-center gap-2 p-2 hover:bg-red-900/30 text-red-400 rounded text-sm"><Trash2 size={16}/> Delete</button>
+                             <button onClick={() => setModalMode('rename')} className="flex items-center gap-3 p-2.5 hover:bg-gray-800 text-left rounded-lg text-sm text-gray-300 transition-colors">
+                                <Edit2 size={16}/> Rename
+                             </button>
+                             <button onClick={handleCopy} className="flex items-center gap-3 p-2.5 hover:bg-gray-800 text-left rounded-lg text-sm text-gray-300 transition-colors">
+                                <Clipboard size={16}/> Copy
+                             </button>
+                             {clipboard && (
+                                <button onClick={handlePaste} className="flex items-center gap-3 p-2.5 hover:bg-gray-800 text-left rounded-lg text-sm text-gray-300 transition-colors">
+                                    <ClipboardPaste size={16}/> Paste Here
+                                </button>
+                             )}
+                             <div className="h-px bg-gray-800 my-1"></div>
+                             <button onClick={handleDeleteFile} className="flex items-center gap-3 p-2.5 hover:bg-red-900/20 text-left rounded-lg text-sm text-red-400 transition-colors">
+                                <Trash2 size={16}/> Delete
+                             </button>
+                         </div>
+                     </div>
                  </div>
             )}
 
@@ -776,8 +840,19 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                                     onChange={(e:any) => setInlineApiKey(e.target.value)}
                                     type="password"
                                 />
+
+                                <Select 
+                                    label="Model"
+                                    value={inlineModel}
+                                    onChange={(e: any) => setInlineModel(e.target.value)}
+                                    options={[
+                                        { value: 'gemini-3-flash-preview', label: 'Gemini 3.0 Flash (Fast)' },
+                                        { value: 'gemini-3-pro-preview', label: 'Gemini 3.0 Pro (Logic)' },
+                                    ]}
+                                />
+
                                 <div className="flex gap-2">
-                                    <Button onClick={handleSaveInlineKey} className="flex-1" disabled={!inlineApiKey}>Save & Enable</Button>
+                                    <Button onClick={handleSaveInlineKey} className="flex-1" disabled={!inlineApiKey && !gemini.current}>Save</Button>
                                     {isAiReady && showAiSettings && (
                                         <Button variant="danger" onClick={handleClearKey} title="Clear Key"><Trash2 size={16}/></Button>
                                     )}
