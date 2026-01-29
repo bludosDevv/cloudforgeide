@@ -267,6 +267,7 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
   // AI Configuration State
   const [isAiReady, setIsAiReady] = useState(false);
   const [inlineApiKey, setInlineApiKey] = useState("");
+  const [showAiSettings, setShowAiSettings] = useState(false);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -280,19 +281,31 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
 
   // Lazy init Gemini
   const gemini = useRef<GeminiService | null>(null);
+  
+  // Initialize AI on mount or when key changes
   useEffect(() => {
       try {
           if (!gemini.current) {
-              // Ensure we check localStorage explicitly here to catch keys saved in ProjectList
               const storedKey = localStorage.getItem('gemini_api_key');
               gemini.current = new GeminiService(storedKey || undefined);
-              if (gemini.current.isConfigured()) setIsAiReady(true);
+          }
+          if (gemini.current && gemini.current.isConfigured()) {
+              setIsAiReady(true);
+          } else {
+              setIsAiReady(false);
           }
       } catch (e) {
           console.error("Gemini init failed:", e);
           setIsAiReady(false);
       }
   }, []);
+
+  // Force re-check when opening panel
+  useEffect(() => {
+      if (isAIOpen && gemini.current) {
+          if (gemini.current.isConfigured()) setIsAiReady(true);
+      }
+  }, [isAIOpen]);
 
   const handleAiToggle = () => {
       setIsAIOpen(!isAIOpen);
@@ -302,6 +315,16 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
       if (!gemini.current || !inlineApiKey.trim()) return;
       gemini.current.updateConfiguration(inlineApiKey.trim());
       setIsAiReady(true);
+      setShowAiSettings(false);
+  };
+
+  const handleClearKey = () => {
+      localStorage.removeItem('gemini_api_key');
+      if (gemini.current) {
+          gemini.current = new GeminiService(undefined);
+      }
+      setIsAiReady(false);
+      setInlineApiKey("");
   };
 
   useEffect(() => {
@@ -732,13 +755,18 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                 <div className="absolute inset-y-0 right-0 w-full md:w-[400px] bg-gray-900 border-l border-gray-800 shadow-2xl flex flex-col z-50 animate-in slide-in-from-right duration-200">
                     <div className="p-3 border-b border-gray-800 flex justify-between items-center bg-gray-800/50">
                         <span className="font-bold text-fuchsia-400 flex gap-2 items-center"><Bot size={18}/> AI Architect</span>
-                        <button onClick={() => setIsAIOpen(false)}><X size={18}/></button>
+                        <div className="flex items-center gap-1">
+                            <button onClick={() => setShowAiSettings(!showAiSettings)} className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white" title="AI Settings">
+                                <Settings size={16} />
+                            </button>
+                            <button onClick={() => setIsAIOpen(false)} className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"><X size={18}/></button>
+                        </div>
                     </div>
 
-                    {!isAiReady ? (
+                    {!isAiReady || showAiSettings ? (
                         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400 space-y-4">
                             <Bot size={48} className="opacity-20" />
-                            <p className="font-medium">AI Architect is not configured.</p>
+                            <p className="font-medium">{showAiSettings ? "AI Configuration" : "AI Architect is not configured."}</p>
                             
                             <div className="w-full bg-gray-800 p-4 rounded-xl border border-gray-700 space-y-3">
                                 <p className="text-xs text-gray-400 text-left">Enter your Gemini API Key to enable AI features.</p>
@@ -748,14 +776,31 @@ const IDE: React.FC<IDEProps> = ({ repo, github, onBack }) => {
                                     onChange={(e:any) => setInlineApiKey(e.target.value)}
                                     type="password"
                                 />
-                                <Button onClick={handleSaveInlineKey} className="w-full" disabled={!inlineApiKey}>Enable AI</Button>
+                                <div className="flex gap-2">
+                                    <Button onClick={handleSaveInlineKey} className="flex-1" disabled={!inlineApiKey}>Save & Enable</Button>
+                                    {isAiReady && showAiSettings && (
+                                        <Button variant="danger" onClick={handleClearKey} title="Clear Key"><Trash2 size={16}/></Button>
+                                    )}
+                                </div>
                             </div>
-
-                            <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-xs text-primary-400 hover:underline">Get a free API Key</a>
+                            
+                            <div className="text-xs text-gray-500">
+                                <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-primary-400 hover:underline">Get a free API Key</a>
+                            </div>
+                            
+                            {showAiSettings && isAiReady && (
+                                <button onClick={() => setShowAiSettings(false)} className="text-xs text-gray-400 hover:text-white underline">Cancel</button>
+                            )}
                         </div>
                     ) : (
                         <>
                             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900">
+                                {aiHistory.length === 0 && (
+                                    <div className="text-center text-gray-600 mt-10 text-sm">
+                                        <p>Ready to help!</p>
+                                        <p className="text-xs mt-2">Try asking: "Create a new Item class"</p>
+                                    </div>
+                                )}
                                 {aiHistory.map((msg, idx) => (
                                     <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                         <div className={`max-w-[95%] rounded-xl px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-800 text-gray-200 border border-gray-700'}`}>
